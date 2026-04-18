@@ -9,7 +9,13 @@ CXXFLAGS = -std=c++17 -Wall -Wextra \
            -Iinclude/Parser \
            -Iinclude/Semantics
 
-TARGET = cgilc.exe
+# Detect OS: Windows gets .exe, Linux/macOS gets no extension
+ifeq ($(OS),Windows_NT)
+    TARGET = cgilc.exe
+else
+    TARGET = cgilc
+endif
+
 SRC_DIR = src
 BUILD_DIR = build
 

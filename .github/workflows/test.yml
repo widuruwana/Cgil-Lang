@@ -7,13 +7,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install GCC
-        run: sudo apt-get install -y g++
+
+      - name: Install build tools
+        run: sudo apt-get install -y g++ make
+
       - name: Build compiler
         run: make
+
       - name: Run test suite
         run: |
+          failed=0
           for f in test_cases/*.gil; do
             echo "Testing: $f"
-            ./cgilc "$f" --target=host -o test_out && ./test_out
+            ./cgilc "$f" --target=host -o test_out
+            if [ $? -ne 0 ]; then failed=1; continue; fi
+            ./test_out
+            if [ $? -ne 0 ]; then failed=1; fi
           done
+          exit $failed
