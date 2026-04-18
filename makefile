@@ -2,8 +2,6 @@
 # CGIL COMPILER FORGE MAKEFILE
 # =============================
 
-SHELL := cmd.exe
-
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra \
            -Iinclude/CodeGen \
@@ -31,8 +29,8 @@ $(TARGET): $(OBJS)
 	@echo Success! Cgil engine forged.
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@if not exist $(subst /,\,$(dir $@)) mkdir $(subst /,\,$(dir $@))
-	@echo [CXX] $<
+	@mkdir -p $(dir $@)
+	@echo [CXX] $
 	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
