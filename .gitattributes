@@ -1,0 +1,7 @@
+# Cgil language
+*.gil linguist-language=Cgil
+*.gil linguist-detectable=true
+
+# Compiler source
+*.cpp linguist-language=C++
+*.h   linguist-language=C++

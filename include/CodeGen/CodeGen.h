@@ -85,12 +85,12 @@ public:
         setupTypeMap();
     }
 
+    bool kernelMode = false;
     void setKernelMode(bool km) { kernelMode = km; }
 
     // Main entry point. Call after semantic analysis succeeds.
     // Writes the entire generated C file to the output stream.
     void generate(ProgramNode* program);
-    bool kernelMode = false;
 
     // =========================================================================
     // ASTVISITOR OVERRIDES
