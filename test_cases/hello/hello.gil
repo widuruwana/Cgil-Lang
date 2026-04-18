@@ -1,0 +1,23 @@
+// =============================================================================
+// CGIL USER-SPACE TEST
+// Running natively on the host OS via the C Standard Library
+// =============================================================================
+
+// 1. Tell the compiler to include the standard C header
+pact <stdio.h>;
+
+// 2. Map the C standard library function to Cgil's type system
+conjure spell putchar(mark32 c) -> mark32;
+
+// 3. Define native Cgil print helper
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i = i + 1) {
+        putchar(msg.ptr[i]);
+    }
+}
+
+// 4. The main entry point
+spell main() -> mark16 {
+    print("Hello World!\n");
+    yield 0;
+}

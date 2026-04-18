@@ -1,0 +1,19 @@
+// =============================================================================
+// CGIL ISOLATED TEST 10: Destined Control Flow Bans (Negative)
+// =============================================================================
+
+spell dangerous_cleanup() -> abyss {
+    destined {
+        // FATAL: The destined block is emitted as a goto label at the end
+        // of the C function. If you yield here, CodeGen emits a goto that
+        // jumps right back to itself, hanging the CPU forever.
+        yield; 
+    }
+
+    yield;
+}
+
+spell main() -> mark32 {
+    dangerous_cleanup();
+    yield 0;
+}

@@ -1,0 +1,37 @@
+// =============================================================================
+// CGIL ISOLATED TEST 04: Loops & Control Flow
+// =============================================================================
+
+spell main() -> mark32 {
+    print("RUNNING TEST 04: LOOPS...");
+
+    // 1. The 'fore' loop with UpdateExpr (i++)
+    mark16 sum = 0;
+    fore (mark16 i = 0; i < 5; i++) {
+        sum = sum + i; // 0 + 1 + 2 + 3 + 4
+    }
+    assert(sum == 10, "Fore loop accumulation failed");
+
+    // 2. The 'whirl' loop with 'shatter' (break)
+    mark16 counter = 0;
+    whirl (kept) { // 'kept' is Cgil's 'true'
+        counter++;
+        if (counter == 5) {
+            shatter; // Breaks out of the infinite whirl
+        }
+    }
+    assert(counter == 5, "Whirl loop with shatter failed");
+
+    // 3. The 'surge' (continue) operator
+    mark16 odds_sum = 0;
+    fore (mark16 j = 0; j < 5; j++) {
+        if (j == 2) {
+            surge; // Skip the number 2
+        }
+        odds_sum = odds_sum + j; // 0 + 1 + 3 + 4
+    }
+    assert(odds_sum == 8, "Surge operator failed");
+
+    print("TEST 04 SUCCESS.");
+    yield 0;
+}

@@ -1,0 +1,23 @@
+// =============================================================================
+// CGIL ISOLATED TEST 02: Operator Precedence
+// =============================================================================
+
+spell double_it(mark16 val) -> mark16 {
+    yield val * 2;
+}
+
+spell main() -> mark32 {
+    print("RUNNING TEST 02...");
+
+    mark16 math_res = 5 + 10 * 2;
+    assert(math_res == 25, "Math precedence failed");
+
+    mark16 paren_res = (5 + 10) * 2;
+    assert(paren_res == 30, "Parentheses override failed");
+
+    mark16 pipe_res = 10 ~> double_it();
+    assert(pipe_res == 20, "Pipeline operator failed");
+
+    print("TEST 02 SUCCESS.");
+    yield 0;
+}

@@ -1,0 +1,24 @@
+// =============================================================================
+// CGIL ISOLATED TEST 11: Hardware Mapping
+// =============================================================================
+
+leyline vga_buffer: mark16 @ 0xB8000;
+portline disk_data: soul16 @ 0x1F0;
+
+spell main() -> mark32 {
+    print("RUNNING TEST 11: HARDWARE MAPPING...");
+
+    // 1. Verify Address extraction
+    // Using '&' on a hardware variable does not do a C address-of.
+    // It commands the compiler to yield the literal hardware address as an 'addr'.
+    addr vga_addr = &vga_buffer;
+    addr disk_addr = &disk_data;
+
+    // 0xB8000 in decimal is 753664
+    // 0x1F0 in decimal is 496
+    assert(vga_addr == 753664, "Leyline address resolution failed");
+    assert(disk_addr == 496, "Portline address resolution failed");
+
+    print("TEST 11 SUCCESS.");
+    yield 0;
+}

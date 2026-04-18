@@ -1,0 +1,20 @@
+// =============================================================================
+// CGIL ISOLATED TEST 01: Basic Syntax, Loops & FFI
+// =============================================================================
+
+spell main() -> mark16 {
+    print("FORGE INITIALIZED.");
+    print("COMMENCING TEST 01.");
+    
+    mark16 alpha = 10;
+    mark16 beta  = 25;
+    
+    // Basic arithmetic and logic check
+    if (alpha + beta == 35) {
+        print("MATH: SUCCESS");
+    } else {
+        print("MATH: FAILURE");
+    }
+    
+    yield 0;
+}

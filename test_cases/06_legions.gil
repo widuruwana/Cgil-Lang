@@ -1,0 +1,39 @@
+// =============================================================================
+// CGIL ISOLATED TEST 06: Legions (Structure of Arrays)
+// =============================================================================
+
+legion Particle {
+    mark16 x;
+    mark16 y;
+}
+
+spell main() -> mark32 {
+    print("RUNNING TEST 06: LEGIONS (SoA)...");
+
+    // Declare a legion array. 
+    // The compiler intercepts this and silently generates: 
+    // mark16 swarm_x[10]; mark16 swarm_y[10];
+    deck[10] Particle swarm;
+
+    // Initialize the SoA
+    fore (mark16 i = 0; i < 10; i++) {
+        swarm[i].x = i;       // Intercepted -> swarm_x[i] = i;
+        swarm[i].y = i * 2;   // Intercepted -> swarm_y[i] = i * 2;
+    }
+
+    // Accumulate to verify
+    mark16 sum_x = 0;
+    mark16 sum_y = 0;
+    
+    fore (mark16 j = 0; j < 10; j++) {
+        sum_x = sum_x + swarm[j].x;
+        sum_y = sum_y + swarm[j].y;
+    }
+
+    // Sum of 0..9 is 45. Sum of 0..18 (evens) is 90.
+    assert(sum_x == 45, "Legion X-axis accumulation failed");
+    assert(sum_y == 90, "Legion Y-axis accumulation failed");
+
+    print("TEST 06 SUCCESS.");
+    yield 0;
+}

@@ -1,0 +1,25 @@
+// =============================================================================
+// CGIL ISOLATED TEST 13: Floating Point Math & Printing
+// =============================================================================
+
+spell main() -> mark32 {
+    print("RUNNING TEST 13: FPU MATH & PRINTING...");
+
+    // Declare floating point variables
+    flow pi = 3.1415;
+    flow radius = 10.0;
+    
+    // FPU Math: Area of a circle (pi * r^2)
+    flow area = pi * (radius * radius);
+
+    // Test Integer printing
+    print("Radius:");
+    print_num(cast<mark32>(radius));
+
+    // Test Float printing
+    print("Area (Expected ~314.1500):");
+    print_flow(area);
+
+    print("TEST 13 SUCCESS.");
+    yield 0;
+}

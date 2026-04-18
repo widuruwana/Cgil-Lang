@@ -1,0 +1,15 @@
+// =============================================================================
+// CGIL STANDARD LIBRARY: std_test.gil
+// =============================================================================
+pact <stdlib.h>;
+
+conjure spell exit(mark32 status) -> abyss;
+
+spell assert(oath condition, scroll fail_msg) -> abyss {
+    if (condition == forsaken) {
+        // We will assume 'print' is linked at compile time
+        print("ASSERTION FAILED:");
+        print(fail_msg);
+        exit(1);
+    }
+}
