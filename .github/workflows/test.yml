@@ -1,0 +1,19 @@
+name: Test Suite
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GCC
+        run: sudo apt-get install -y g++
+      - name: Build compiler
+        run: make
+      - name: Run test suite
+        run: |
+          for f in test_cases/*.gil; do
+            echo "Testing: $f"
+            ./cgilc "$f" --target=host -o test_out && ./test_out
+          done
