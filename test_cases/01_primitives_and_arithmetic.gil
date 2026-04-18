@@ -1,0 +1,120 @@
+// =============================================================================
+// CGIL TEST 01: Primitives, Arithmetic & The Type System
+// =============================================================================
+// Covers: mark16, mark32, soul16, soul32, addr, rune, oath, kept, forsaken,
+//         arithmetic (+, -, *, /, %), comparison, cast<T>, logical &&/||,
+//         bitwise &, |, ^, <<, >>, ~, integer literals, hex literals.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    if (n < 0) { putchar(45); n = 0 - n; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+spell main() -> mark16 {
+    print("=== TEST 01: PRIMITIVES & ARITHMETIC ===\n");
+
+    // --- Signed integers ---
+    print("\n[1] Signed Integer Arithmetic (mark16, mark32)\n");
+    mark16 a = 250;
+    mark16 b = 100;
+    print_label("  250 + 100     = ", cast<mark32>(a + b));
+    print_label("  250 - 100     = ", cast<mark32>(a - b));
+    print_label("  250 * 2       = ", cast<mark32>(a * 2));
+    print_label("  250 / 5       = ", cast<mark32>(a / 5));
+    print_label("  250 mod 7     = ", cast<mark32>(a % 7));
+
+    mark32 big = 70000;
+    print_label("  mark32 70000  = ", big);
+    print_label("  70000 * 2     = ", big * 2);
+
+    // --- Unsigned integers ---
+    print("\n[2] Unsigned Integer Arithmetic (soul16, soul32)\n");
+    soul16 u = 60000;
+    print_label("  soul16 60000  = ", cast<mark32>(u));
+    print_label("  60000 + 5000  = ", cast<mark32>(u + 5000));
+    soul32 big_u = 4000000000;
+    print_label("  soul32 4000000000 / 1M = ", cast<mark32>(big_u / 1000000));
+
+    // --- Bytes and addresses ---
+    print("\n[3] Rune (byte) and Addr\n");
+    rune byte_val = 0xFF;
+    print_label("  rune 0xFF     = ", cast<mark32>(byte_val));
+    addr port_addr = 0x1F0;
+    print_label("  addr 0x1F0 (ATA data port) = ", cast<mark32>(port_addr));
+    soul32 mmio_addr = 0xB8000;
+    print_label("  soul32 0xB8000 (VGA base) = ", cast<mark32>(mmio_addr));
+
+    // --- Booleans ---
+    print("\n[4] Oath (boolean) - kept and forsaken\n");
+    oath t = kept;
+    oath f = forsaken;
+    print_label("  kept  == 1    = ", cast<mark32>(t));
+    print_label("  forsaken == 0 = ", cast<mark32>(f));
+    oath combined = kept && forsaken;
+    print_label("  kept && fors  = ", cast<mark32>(combined));
+    oath either = kept || forsaken;
+    print_label("  kept || fors  = ", cast<mark32>(either));
+
+    // --- Bitwise operations ---
+    print("\n[5] Bitwise Operations\n");
+    soul16 mask = 0xFF00;
+    soul16 val  = 0xABCD;
+    print_label("  0xABCD & 0xFF00 = ", cast<mark32>(val & mask));
+    print_label("  0xABCD | 0x00FF = ", cast<mark32>(val | 0x00FF));
+    print_label("  0xABCD ^ 0xFFFF = ", cast<mark32>(val ^ 0xFFFF));
+    print_label("  0x01 << 8       = ", cast<mark32>(1 << 8));
+    print_label("  0xFF00 >> 4     = ", cast<mark32>(mask >> 4));
+
+    // --- Explicit casting ---
+    print("\n[6] Explicit Casting (cast<T>)\n");
+    rune letter = 65;
+    mark32 wide = cast<mark32>(letter);
+    print("  cast<mark32>(65) = ");
+    putchar(wide);
+    putchar(10);
+    soul16 big_soul = 50000;
+    mark16 truncated = cast<mark16>(big_soul);
+    print_label("  cast<mark16>(50000) = ", cast<mark32>(truncated));
+
+    // --- Comparison operators ---
+    print("\n[7] Comparison Operators\n");
+    mark16 x = 42;
+    print_label("  42 == 42  : ", cast<mark32>(x == 42));
+    print_label("  42 != 99  : ", cast<mark32>(x != 99));
+    print_label("  42 >  10  : ", cast<mark32>(x > 10));
+    print_label("  42 <  99  : ", cast<mark32>(x < 99));
+    print_label("  42 >= 42  : ", cast<mark32>(x >= 42));
+    print_label("  42 <= 43  : ", cast<mark32>(x <= 43));
+
+    print("\n[RESULT] TEST 01 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

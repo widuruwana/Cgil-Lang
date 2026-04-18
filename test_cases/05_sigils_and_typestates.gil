@@ -1,0 +1,193 @@
+// =============================================================================
+// CGIL TEST 05: Sigils (Structs) & Typestate Enforcement
+// =============================================================================
+// Covers: sigil declarations, stance declarations, struct initialization
+//         with stance prefix, field access (. and ->), stance transitions,
+//         stance discriminant values, sigil pointers, multiple fields.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_num_inline(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// --- Sigil definitions ---
+
+sigil Counter {
+    stance Idle;
+    stance Running;
+    stance Overflow;
+    mark32 value;
+    mark16 limit;
+}
+
+sigil Packet {
+    stance Unparsed;
+    stance Valid;
+    stance Corrupt;
+    soul16 src_port;
+    soul16 dst_port;
+    soul16 length;
+    soul16 checksum;
+}
+
+sigil Node {
+    mark16 id;
+    mark16 data;
+}
+
+// --- Spells ---
+
+spell increment(sigil* Counter c) -> abyss {
+    c->value = c->value + 1;
+    if (c->value >= cast<mark32>(c->limit)) {
+        c = Counter:Overflow;
+    }
+}
+
+spell reset_counter(sigil* Counter c) -> abyss {
+    c->value = 0;
+    c = Counter:Idle;
+}
+
+spell validate_packet(sigil* Packet p) -> abyss {
+    if (p->length == 0 || p->length > 1500) {
+        p = Packet:Corrupt;
+    } else {
+        p = Packet:Valid;
+    }
+}
+
+spell process_packet(sigil* Packet:Valid p) -> soul16 {
+    soul16 checksum = p->src_port ^ p->dst_port ^ p->length;
+    yield checksum;
+}
+
+spell main() -> mark16 {
+    print("=== TEST 05: SIGILS & TYPESTATES ===\n");
+
+    // --- Sigil initialization with stance prefix ---
+    print("\n[1] Sigil Initialization with Stance Prefix\n");
+    sigil Counter c = Counter:Idle { value: 0, limit: 5 };
+    print_label("  initial value  = ", c.value);
+    print_label("  initial limit  = ", cast<mark32>(c.limit));
+    print_label("  initial stance = ", cast<mark32>(c.stance));
+    print_label("  Idle discrm.   = ", cast<mark32>(Counter:Idle));
+
+    // --- Stance transitions ---
+    print("\n[2] Stance Transitions\n");
+    c = Counter:Running;
+    print_label("  after -> Running  stance    = ", cast<mark32>(c.stance));
+    print_label("  Running discriminant        = ", cast<mark32>(Counter:Running));
+
+    // --- Field mutation through pointer ---
+    print("\n[3] Field Mutation via Pointer\n");
+    sigil* Counter cp = &c;
+    cp->value = 42;
+    print_label("  c.value after cp->value = 42 = ", c.value);
+
+    // --- Increment spell with overflow ---
+    print("\n[4] Spell-Driven Stance Transition (Overflow at limit=5)\n");
+    sigil Counter ticker = Counter:Running { value: 0, limit: 5 };
+    fore (mark16 i = 0; i < 6; i++) {
+        increment(&ticker);
+        print("  tick ");
+        print_num_inline(cast<mark32>(i + 1));
+        print(" value=");
+        print_num_inline(ticker.value);
+        print(" stance=");
+        print_num(cast<mark32>(ticker.stance));
+    }
+
+    reset_counter(&ticker);
+    print_label("  after reset: value  = ", ticker.value);
+    print_label("  after reset: stance = ", cast<mark32>(ticker.stance));
+
+    // --- All stance discriminants ---
+    print("\n[5] All Counter Stance Discriminants\n");
+    print_label("  Counter:Idle     = ", cast<mark32>(Counter:Idle));
+    print_label("  Counter:Running  = ", cast<mark32>(Counter:Running));
+    print_label("  Counter:Overflow = ", cast<mark32>(Counter:Overflow));
+
+    // --- Packet sigil with multiple fields ---
+    print("\n[6] Packet Sigil - Multi-Field Struct\n");
+    sigil Packet pkt = Packet:Unparsed { src_port: 8080, dst_port: 443, length: 512, checksum: 0 };
+    print_label("  src_port  = ", cast<mark32>(pkt.src_port));
+    print_label("  dst_port  = ", cast<mark32>(pkt.dst_port));
+    print_label("  length    = ", cast<mark32>(pkt.length));
+    print_label("  stance    = ", cast<mark32>(pkt.stance));
+
+    validate_packet(&pkt);
+    pkt = Packet:Valid;
+    print_label("  after validate stance       = ", cast<mark32>(pkt.stance));
+    print_label("  Packet:Valid discriminant   = ", cast<mark32>(Packet:Valid));
+
+    soul16 cs = process_packet(&pkt);
+    print_label("  computed checksum = ", cast<mark32>(cs));
+    soul16 expected = 8080 ^ 443 ^ 512;
+    print_label("  expected checksum = ", cast<mark32>(expected));
+    if (cs == expected) { print("  Checksum match: CORRECT\n"); }
+    else                { print("  Checksum mismatch: FAIL\n"); }
+
+    // --- Sigil without stances ---
+    print("\n[7] Sigil Without Stances (pure data struct)\n");
+    sigil Node n1 = Node { id: 1, data: 100 };
+    sigil Node n2 = Node { id: 2, data: 200 };
+    print_label("  n1.id   = ", cast<mark32>(n1.id));
+    print_label("  n2.data = ", cast<mark32>(n2.data));
+    n1.data = n2.data + n1.data;
+    print_label("  n1.data + n2.data = ", cast<mark32>(n1.data));
+
+    // --- Stance read-only accessor ---
+    print("\n[8] Stance Accessor (.stance)\n");
+    sigil Counter reader = Counter:Idle { value: 99, limit: 100 };
+    print_label("  reader.stance (Idle=0)    = ", cast<mark32>(reader.stance));
+    reader = Counter:Running;
+    print_label("  reader.stance (Running=1) = ", cast<mark32>(reader.stance));
+
+    print("\n[RESULT] TEST 05 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

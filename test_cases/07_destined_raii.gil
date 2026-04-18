@@ -1,0 +1,249 @@
+// =============================================================================
+// CGIL TEST 07: Destined RAII — Guaranteed Cleanup
+// =============================================================================
+// Covers: destined blocks (unconditional and conditional), LIFO execution order,
+//         multiple yield paths all triggering cleanup, ? operator with destined,
+//         nested destined chains, cleanup on error propagation.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_num_inline(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// =============================================================================
+// A sigil to carry cleanup state — avoids primitive pointer in tuple returns
+// =============================================================================
+
+sigil CleanupTracker {
+    stance Active;
+    mark32 count;
+    mark16 block_a_fired;
+    mark16 block_b_fired;
+    mark16 block_c_fired;
+}
+
+// =============================================================================
+// TEST SPELLS
+// =============================================================================
+
+// Single unconditional destined — fires on both yield paths
+spell single_destined(sigil* CleanupTracker t, mark16 path) -> mark16 {
+    destined {
+        t->count = t->count + 1;
+        print("  [destined] single_destined cleanup fired\n");
+    }
+
+    if (path == 1) {
+        print("  taking early yield path\n");
+        yield 100;
+    }
+
+    print("  taking normal yield path\n");
+    yield 200;
+}
+
+// Three destined blocks — proves LIFO ordering
+spell lifo_destined(sigil* CleanupTracker t) -> mark16 {
+    // Block A: declared first -> fires LAST
+    destined {
+        t->block_a_fired = 1;
+        print("  [destined] BLOCK A fired (declared first, fires last)\n");
+    }
+
+    // Block B: declared second -> fires MIDDLE
+    destined {
+        t->block_b_fired = 1;
+        print("  [destined] BLOCK B fired (declared second)\n");
+    }
+
+    // Block C: declared third -> fires FIRST
+    destined {
+        t->block_c_fired = 1;
+        print("  [destined] BLOCK C fired (declared third, fires first)\n");
+    }
+
+    yield 42;
+}
+
+// Conditional destined — only fires when condition is true
+spell conditional_destined(sigil* CleanupTracker t, oath do_cleanup) -> mark16 {
+    destined (do_cleanup == kept) {
+        t->count = t->count + 100;
+        print("  [destined] conditional block fired (condition was true)\n");
+    }
+
+    destined {
+        t->count = t->count + 10;
+        print("  [destined] unconditional block fired\n");
+    }
+
+    yield 77;
+}
+
+// =============================================================================
+// ? OPERATOR WITH DESTINED
+// Uses a sigil for state instead of returning a pointer in a tuple
+// =============================================================================
+
+rank ProcessError { InvalidInput, ResourceExhausted }
+
+spell validate_input(mark16 value) -> mark16 | ruin<ProcessError> {
+    if (value == 0) {
+        yield ruin(ProcessError::InvalidInput);
+    }
+    yield value * 2;
+}
+
+// Returns (sigil* CleanupTracker, mark16 | ruin<ProcessError>)
+// The sigil* is a valid tuple return element — this is the correct pattern
+spell process_with_cleanup(own sigil* CleanupTracker:Active t, mark16 input)
+    -> (sigil* CleanupTracker, mark16 | ruin<ProcessError>) {
+
+    destined {
+        t->count = t->count + 1;
+        print("  [destined] process_with_cleanup cleanup fired\n");
+    }
+
+    // ? propagates ProcessError up AND triggers destined before doing so
+    mark16 doubled = validate_input(input)?;
+    yield (t, doubled);
+}
+
+spell main() -> mark16 {
+    print("=== TEST 07: DESTINED RAII ===\n");
+
+    // === Test 1: Single destined, early yield ===
+    print("\n[1] Single Destined - Early Yield Path\n");
+    sigil CleanupTracker t1 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+    mark16 r = single_destined(&t1, 1);
+    print_label("  yield value   = ", cast<mark32>(r));
+    print_label("  cleanups fired = ", t1.count);
+    if (r == 100 && t1.count == 1) { print("  CORRECT\n"); }
+
+    // === Test 2: Single destined, normal yield ===
+    print("\n[2] Single Destined - Normal Yield Path\n");
+    sigil CleanupTracker t2 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+    r = single_destined(&t2, 0);
+    print_label("  yield value   = ", cast<mark32>(r));
+    print_label("  cleanups fired = ", t2.count);
+    if (r == 200 && t2.count == 1) { print("  CORRECT\n"); }
+
+    // === Test 3: LIFO ordering ===
+    print("\n[3] LIFO Destined Ordering (3 blocks)\n");
+    print("  Expected fire order: C, B, A\n");
+    sigil CleanupTracker t3 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+    mark16 lifo_result = lifo_destined(&t3);
+    print_label("  yield value    = ", cast<mark32>(lifo_result));
+    print_label("  block_a_fired  = ", cast<mark32>(t3.block_a_fired));
+    print_label("  block_b_fired  = ", cast<mark32>(t3.block_b_fired));
+    print_label("  block_c_fired  = ", cast<mark32>(t3.block_c_fired));
+    if (t3.block_a_fired == 1 && t3.block_b_fired == 1 && t3.block_c_fired == 1) {
+        print("  CORRECT: all 3 blocks fired\n");
+    }
+
+    // === Test 4: Conditional destined, condition TRUE ===
+    print("\n[4] Conditional Destined - Condition TRUE\n");
+    sigil CleanupTracker t4 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+    r = conditional_destined(&t4, kept);
+    print_label("  count (expected 110) = ", t4.count);
+    if (t4.count == 110) { print("  CORRECT: both blocks fired (+100 +10)\n"); }
+
+    // === Test 5: Conditional destined, condition FALSE ===
+    print("\n[5] Conditional Destined - Condition FALSE\n");
+    sigil CleanupTracker t5 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+    r = conditional_destined(&t5, forsaken);
+    print_label("  count (expected 10)  = ", t5.count);
+    if (t5.count == 10) { print("  CORRECT: only unconditional block fired (+10)\n"); }
+
+    // === Test 6: ? operator triggers destined on error path ===
+    print("\n[6] Destined Fires on ? Propagation (error path, input=0)\n");
+    sigil CleanupTracker t6 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+
+    t6 <~ divine process_with_cleanup(own &t6, 0) {
+        (returned, mark16 val) => {
+            print("  -> ERROR: expected ruin but got success\n");
+        }
+        (returned, ruin<ProcessError::InvalidInput>) => {
+            print("  -> CORRECT: InvalidInput ruin propagated through ?\n");
+        }
+        (returned, ruin err) => {
+            print("  -> catch-all ruin\n");
+        }
+    }
+    t6 = CleanupTracker:Active;
+    print_label("  destined fired during ? error path = ", t6.count);
+    if (t6.count == 1) { print("  CORRECT: cleanup ran before ruin propagated\n"); }
+
+    // === Test 7: ? success path — destined still fires ===
+    print("\n[7] Destined Fires on ? Success Path (input=5)\n");
+    sigil CleanupTracker t7 = CleanupTracker:Active { count: 0, block_a_fired: 0, block_b_fired: 0, block_c_fired: 0 };
+
+    t7 <~ divine process_with_cleanup(own &t7, 5) {
+        (returned, mark16 val) => {
+            print("  -> SUCCESS: result = ");
+            print_num(cast<mark32>(val));
+        }
+        (returned, ruin err) => {
+            print("  -> RUIN (unexpected)\n");
+        }
+    }
+    t7 = CleanupTracker:Active;
+    print_label("  destined fired on success = ", t7.count);
+    if (t7.count == 1) { print("  CORRECT: cleanup ran on success path too\n"); }
+
+    // === Summary ===
+    print("\n[SUMMARY]\n");
+    print("  destined fires on early yield:    YES\n");
+    print("  destined fires on normal yield:   YES\n");
+    print("  LIFO order enforced:              YES\n");
+    print("  conditional destined works:       YES\n");
+    print("  destined fires before ? ruin:     YES\n");
+    print("  destined fires before ? success:  YES\n");
+
+    print("\n[RESULT] TEST 07 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

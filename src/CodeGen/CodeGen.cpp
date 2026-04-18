@@ -239,9 +239,9 @@ void CodeGenVisitor::visit(HardwareDecl* node) {
     if (!node->isPortline) {
         std::string cType = getCType(node->type);
         emitLine("// leyline " + node->name.lexeme + " @ " + node->address.lexeme);
-        // Emits a C macro: #define vga_buffer (*(volatile uint16_t *)0xB8000)
         emitLine("#define " + node->name.lexeme + " (*(volatile " + cType + " *)" + node->address.lexeme + ")");
         emitLine("");
+        leylineAddressMap[node->name.lexeme] = node->address.lexeme;
     } else {
         portlineAddressMap[node->name.lexeme]  = node->address.lexeme;
         portlineTypeMap[node->name.lexeme]     = node->type.lexeme;
@@ -515,8 +515,8 @@ void CodeGenVisitor::visit(SpellDecl* node) {
     signature += returnTypeStr + " " + node->name.lexeme + "(";
 
     // GCC requires ISRs to take an irq_frame argument
-    if (node->isWarden) {
-        signature += "void* __irq_frame"; 
+    if (node->isWarden && currentPhase == Phase::IMPLEMENTATIONS && kernelMode) {
+        signature += "__attribute__((interrupt)) ";
     } else {
         for (size_t i = 0; i < node->params.size(); ++i) {
             const auto& p = node->params[i];
@@ -1447,13 +1447,20 @@ void CodeGenVisitor::visit(AddressOfExpr* node) {
     if (currentPhase != Phase::IMPLEMENTATIONS) return;
 
     auto* ident = dynamic_cast<IdentifierExpr*>(node->operand.get());
+
+    // Portline &name -> emit the integer port address, NOT a read
     if (ident && portlineAddressMap.count(ident->token.lexeme)) {
         emit("((uint16_t)" + portlineAddressMap.at(ident->token.lexeme) + ")");
         return;
     }
 
-    // Standard C address-of. We rely on cross-compilation flags to handle 
-    // the 64-bit to 16-bit addr conversions for hardware variables.
+    // Leyline &name -> emit the physical address as uint32_t constant
+    if (ident && leylineAddressMap.count(ident->token.lexeme)) {
+        emit("((uint32_t)" + leylineAddressMap.at(ident->token.lexeme) + ")");
+        return;
+    }
+
+    // Standard C address-of
     emit("&(");
     node->operand->accept(*this);
     emit(")");

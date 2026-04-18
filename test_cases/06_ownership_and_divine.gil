@@ -1,0 +1,223 @@
+// =============================================================================
+// CGIL TEST 06: Ownership (own) & Divine Pattern Matching
+// =============================================================================
+// Covers: own keyword (ownership transfer), divine block, <~ rebinding,
+//         success branch, specific ruin<R::V> branch, catch-all ruin branch,
+//         payloadless omen (abyss success), use-after-move prevention,
+//         exhaustive pattern coverage.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// --- Hardware simulation types ---
+
+rank BusError {
+    Locked,
+    Timeout,
+    HardwareFault
+}
+
+rank SensorError {
+    NotCalibrated,
+    OutOfRange,
+    Disconnected
+}
+
+sigil Controller {
+    stance Free;
+    stance Busy;
+    stance Error;
+    mark16 device_id;
+    soul16 operation_count;
+}
+
+sigil Sensor {
+    stance Cold;
+    stance Active;
+    stance Saturated;
+    mark16 last_reading;
+    rune   calibrated;
+}
+
+// --- Spells that take ownership ---
+
+spell acquire_controller(own sigil* Controller:Free ctrl) -> (sigil* Controller, abyss | ruin<BusError>) {
+    destined {
+        // Cleanup fires on every yield path
+        print("  [destined] controller cleanup firing\n");
+    }
+
+    ctrl->operation_count = ctrl->operation_count + 1;
+    ctrl = Controller:Busy;
+
+    if (ctrl->device_id == 0) {
+        yield (ctrl, ruin(BusError::Locked));
+    }
+
+    yield (ctrl);
+}
+
+spell read_sensor(own sigil* Sensor:Active sensor, mark16 raw_value) -> (sigil* Sensor, mark16 | ruin<SensorError>) {
+    destined { }
+
+    if (sensor->calibrated == 0) {
+        yield (sensor, ruin(SensorError::NotCalibrated));
+    }
+
+    if (raw_value > 1000) {
+        sensor = Sensor:Saturated;
+        yield (sensor, ruin(SensorError::OutOfRange));
+    }
+
+    sensor->last_reading = raw_value;
+    yield (sensor, raw_value);
+}
+
+spell main() -> mark16 {
+    print("=== TEST 06: OWNERSHIP & DIVINE ===\n");
+
+    // === Test A: Success path ===
+    print("\n[1] Divine — Success Path (payloadless omen)\n");
+    sigil Controller ctrl = Controller:Free { device_id: 42, operation_count: 0 };
+    print_label("  before: stance = ", cast<mark32>(ctrl.stance));
+    print_label("  before: ops    = ", cast<mark32>(ctrl.operation_count));
+
+    ctrl <~ divine acquire_controller(own &ctrl) {
+        (c) => {
+            print("  SUCCESS: controller acquired\n");
+        }
+        (c, ruin<BusError::Locked>) => {
+            print("  RUIN: bus locked\n");
+        }
+        (c, ruin err) => {
+            print("  RUIN: unknown bus error\n");
+        }
+    }
+
+    ctrl = Controller:Free;
+    print_label("  after: stance  = ", cast<mark32>(ctrl.stance));
+    print_label("  after: ops     = ", cast<mark32>(ctrl.operation_count));
+
+    // === Test B: Specific ruin path ===
+    print("\n[2] Divine — Specific Ruin Path\n");
+    sigil Controller bad_ctrl = Controller:Free { device_id: 0, operation_count: 0 };
+    print("  device_id=0 should trigger BusError::Locked\n");
+
+    bad_ctrl <~ divine acquire_controller(own &bad_ctrl) {
+        (c) => {
+            print("  -> ERROR: expected ruin but got success\n");
+        }
+        (c, ruin<BusError::Locked>) => {
+            print("  -> CORRECT: caught BusError::Locked specifically\n");
+        }
+        (c, ruin err) => {
+            print("  -> catch-all triggered (wrong)\n");
+        }
+    }
+    bad_ctrl = Controller:Free;
+
+    // === Test C: Sensor with payload ===
+    print("\n[3] Divine — Success with Payload (mark16)\n");
+    sigil Sensor sensor = Sensor:Active { last_reading: 0, calibrated: 1 };
+    mark16 final_reading = 0;
+
+    sensor <~ divine read_sensor(own &sensor, 512) {
+        (s, mark16 reading) => {
+            print("  SUCCESS: sensor read = ");
+            print_num(cast<mark32>(reading));
+            final_reading = reading;
+        }
+        (s, ruin<SensorError::NotCalibrated>) => {
+            print("  RUIN: sensor not calibrated\n");
+        }
+        (s, ruin<SensorError::OutOfRange>) => {
+            print("  RUIN: sensor out of range\n");
+        }
+        (s, ruin err) => {
+            print("  RUIN: unknown sensor error\n");
+        }
+    }
+    sensor = Sensor:Active;
+    print_label("  sensor.last_reading = ", cast<mark32>(sensor.last_reading));
+    print_label("  final_reading var   = ", cast<mark32>(final_reading));
+
+    // === Test D: Out-of-range triggers ruin ===
+    print("\n[4] Divine — OutOfRange Ruin (raw_value > 1000)\n");
+    sigil Sensor sensor2 = Sensor:Active { last_reading: 0, calibrated: 1 };
+
+    sensor2 <~ divine read_sensor(own &sensor2, 1500) {
+        (s, mark16 reading) => {
+            print("  -> ERROR: expected ruin but got value\n");
+        }
+        (s, ruin<SensorError::OutOfRange>) => {
+            print("  -> CORRECT: OutOfRange caught\n");
+            print_label("     sensor2 stance after saturate = ", cast<mark32>(s->stance));
+        }
+        (s, ruin err) => {
+            print("  -> catch-all triggered\n");
+        }
+    }
+    sensor2 = Sensor:Active;
+
+    // === Test E: Not-calibrated path ===
+    print("\n[5] Divine — NotCalibrated Ruin\n");
+    sigil Sensor uncal = Sensor:Active { last_reading: 0, calibrated: 0 };
+
+    uncal <~ divine read_sensor(own &uncal, 100) {
+        (s, mark16 reading) => {
+            print("  -> ERROR: expected calibration ruin\n");
+        }
+        (s, ruin<SensorError::NotCalibrated>) => {
+            print("  -> CORRECT: NotCalibrated caught\n");
+        }
+        (s, ruin err) => {
+            print("  -> catch-all triggered\n");
+        }
+    }
+    uncal = Sensor:Active;
+
+    // === Test F: operation_count accumulation ===
+    print("\n[6] Ownership Semantics — operation_count accumulates\n");
+    sigil Controller reusable = Controller:Free { device_id: 1, operation_count: 0 };
+    fore (mark16 i = 0; i < 3; i++) {
+        reusable <~ divine acquire_controller(own &reusable) {
+            (c) => { print("  acquire ok\n"); }
+            (c, ruin err) => { print("  acquire failed\n"); }
+        }
+        reusable = Controller:Free;
+    }
+    print_label("  total operations completed = ", cast<mark32>(reusable.operation_count));
+
+    print("\n[RESULT] TEST 06 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

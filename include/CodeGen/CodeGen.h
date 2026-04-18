@@ -85,9 +85,12 @@ public:
         setupTypeMap();
     }
 
+    void setKernelMode(bool km) { kernelMode = km; }
+
     // Main entry point. Call after semantic analysis succeeds.
     // Writes the entire generated C file to the output stream.
     void generate(ProgramNode* program);
+    bool kernelMode = false;
 
     // =========================================================================
     // ASTVISITOR OVERRIDES
@@ -186,6 +189,8 @@ private:
 
     // portline name -> port address string ("0x1F7")
     std::unordered_map<std::string, std::string> portlineAddressMap;
+
+    std::unordered_map<std::string, std::string> leylineAddressMap;
 
     // portline name -> type string ("rune" = 8-bit, "soul16" = 16-bit)
     std::unordered_map<std::string, std::string> portlineTypeMap;

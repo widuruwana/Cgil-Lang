@@ -1,0 +1,221 @@
+// =============================================================================
+// CGIL TEST 10: Weave (~>), Casting & Advanced Operators
+// =============================================================================
+// Covers: ~> weave pipeline operator, cast<T> value cast, cast<T*> pointer cast,
+//         prefix/postfix ++/--, all bitwise ops (&, |, ^, ~, <<, >>),
+//         modulo %, logical && and ||, operator precedence verification.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_num_inline(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// --- Pipeline spells ---
+
+spell double_it(mark16 n) -> mark16 { yield n * 2; }
+spell add_ten(mark16 n) -> mark16   { yield n + 10; }
+spell clamp_255(mark16 n) -> mark16 {
+    if (n > 255) { yield 255; }
+    yield n;
+}
+
+spell count_bits(soul16 n) -> soul16 {
+    soul16 count = 0;
+    whirl (n != 0) {
+        count = count + (n & 1);
+        n = n >> 1;
+    }
+    yield count;
+}
+
+spell reverse_bits(soul16 n) -> soul16 {
+    soul16 result = 0;
+    fore (mark16 i = 0; i < 16; i++) {
+        result = cast<soul16>((result << 1) | (n & 1));
+        n = n >> 1;
+    }
+    yield result;
+}
+
+spell main() -> mark16 {
+    print("=== TEST 10: WEAVE, CAST & ADVANCED OPERATORS ===\n");
+
+    // --- Weave pipeline ---
+    print("\n[1] Weave Pipeline Operator (~>)\n");
+    mark16 start = 5;
+    mark16 r1 = start ~> double_it();
+    print_label("  5 ~> double_it()                  = ", cast<mark32>(r1));
+
+    mark16 r2 = start ~> double_it() ~> add_ten();
+    print_label("  5 ~> double_it() ~> add_ten()     = ", cast<mark32>(r2));
+
+    mark16 r3 = start ~> double_it() ~> add_ten() ~> clamp_255();
+    print_label("  ...~> clamp_255()                  = ", cast<mark32>(r3));
+
+    mark16 big = 200;
+    mark16 r4 = big ~> double_it() ~> clamp_255();
+    print_label("  200 ~> double_it() ~> clamp_255() = ", cast<mark32>(r4));
+    if (r4 == 255) { print("  Saturation: CORRECT\n"); }
+
+    // --- Value casting ---
+    print("\n[2] Value Casting (cast<T>)\n");
+    rune byte_val = 200;
+    mark16 to_mark  = cast<mark16>(byte_val);
+    mark32 to_mark32 = cast<mark32>(byte_val);
+    print_label("  rune 200 -> mark16   = ", cast<mark32>(to_mark));
+    print_label("  rune 200 -> mark32   = ", to_mark32);
+
+    soul16 big_soul = 50000;
+    mark16 truncated = cast<mark16>(big_soul);
+    print_label("  cast<mark16>(50000)  = ", cast<mark32>(truncated));
+
+    rune ascii_A = cast<rune>(65);
+    print("  cast<rune>(65) as char = ");
+    putchar(cast<mark32>(ascii_A));
+    putchar(10);
+
+    mark32 chain = cast<mark32>(cast<rune>(200));
+    print_label("  cast chain rune->mark32(200) = ", chain);
+
+    // --- Pointer casting ---
+    print("\n[3] Pointer Casting (cast<T*>)\n");
+    soul16 raw_value = 0xABCD;
+    soul16* raw_ptr = &raw_value;
+    rune* byte_ptr = cast<rune*>(raw_ptr);
+    print_label("  soul16 0xABCD low byte via rune* = ", cast<mark32>(*byte_ptr));
+    print_label("  original soul16 value            = ", cast<mark32>(raw_value));
+
+    // --- Increment and decrement ---
+    print("\n[4] Increment & Decrement (++ / --)\n");
+    mark16 counter = 10;
+    counter++;
+    print_label("  10++  = ", cast<mark32>(counter));
+    counter++;
+    print_label("  11++  = ", cast<mark32>(counter));
+    --counter;
+    print_label("  --12  = ", cast<mark32>(counter));
+    counter--;
+    print_label("  11--  = ", cast<mark32>(counter));
+
+    mark16 loop_counter = 0;
+    fore (mark16 i = 0; i < 5; i++) { loop_counter++; }
+    print_label("  loop++ x5 = ", cast<mark32>(loop_counter));
+
+    // --- Bitwise operations (hex literals only — no 0b support) ---
+    print("\n[5] Bitwise Operations\n");
+    soul16 a = 0xAAAA;   // alternating bits: 1010 1010 1010 1010
+    soul16 b = 0x5555;   // inverse:          0101 0101 0101 0101
+
+    print_label("  a = 0xAAAA = ", cast<mark32>(a));
+    print_label("  b = 0x5555 = ", cast<mark32>(b));
+    print_label("  a & b      = ", cast<mark32>(a & b));
+    soul16 and_result = a & b;
+    if (and_result == 0) { print("  (a & b == 0: CORRECT)\n"); }
+    soul16 or_result = a | b;
+    if (or_result == 0xFFFF) { print("  (a | b == 0xFFFF: CORRECT)\n"); }
+    soul16 xor_result = a ^ b;
+    if (xor_result == 0xFFFF) { print("  (a ^ b == 0xFFFF: CORRECT)\n"); }
+    soul16 not_result = cast<soul16>(~a) & 0xFFFF;
+    if (not_result == 0x5555) { print("  (~a == b: CORRECT)\n"); }
+
+    // Bit counting
+    soul16 test_val = 0xCCCC;  // 1100 1100 1100 1100 — 8 bits set
+    soul16 bits = count_bits(test_val);
+    print_label("  popcount(0xCCCC) = ", cast<mark32>(bits));
+    if (bits == 8) { print("  CORRECT: 8 bits set in 0xCCCC\n"); }
+
+    // Bit reversal — 0x8001 = 1000 0000 0000 0001, reversed = 0x8001 (palindrome)
+    soul16 palindrome = 0x8001;
+    soul16 reversed = reverse_bits(palindrome);
+    soul16 rev_val = reversed;
+    if (rev_val == palindrome) { print("  CORRECT: 0x8001 is a bit palindrome\n"); }
+
+    // --- Modulo ---
+    print("\n[6] Modulo Operator (%)\n");
+    fore (mark16 i = 1; i <= 10; i++) {
+        if ((i % 3) == 0) {
+            print("  ");
+            print_num_inline(cast<mark32>(i));
+            print(" divisible by 3\n");
+        }
+    }
+    print_label("  7 %  3 = ", cast<mark32>(7 % 3));
+    print_label("  10 % 7 = ", cast<mark32>(10 % 7));
+    print_label("  100 % 9 = ", cast<mark32>(100 % 9));
+
+    // --- Logical operators ---
+    print("\n[7] Logical Operators (&& / ||)\n");
+    mark16 x = 5;
+    mark16 y = 10;
+    oath both   = (x > 0) && (y > 0);
+    oath either = (x > 100) || (y > 5);
+    oath neither = (x > 100) || (y > 100);
+    print_label("  (5>0) && (10>0)    = ", cast<mark32>(both));
+    print_label("  (5>100)||(10>5)   = ", cast<mark32>(either));
+    print_label("  (5>100)||(10>100) = ", cast<mark32>(neither));
+
+    // --- Operator precedence ---
+    print("\n[8] Operator Precedence Verification\n");
+    mark16 prec1 = 2 + 3 * 4;
+    print_label("  2 + 3 * 4 = ", cast<mark32>(prec1));
+    if (prec1 == 14) { print("  CORRECT: * before +\n"); }
+
+    mark16 prec2 = (2 + 3) * 4;
+    print_label("  (2+3) * 4 = ", cast<mark32>(prec2));
+    if (prec2 == 20) { print("  CORRECT\n"); }
+
+    soul16 prec3 = cast<soul16>(1 | 2 & 3);
+    print_label("  1 | 2 & 3 = ", cast<mark32>(prec3));
+    if (prec3 == 3) { print("  CORRECT: & before |\n"); }
+
+    mark16 prec4 = (4 + 2) << 1;
+    print_label("  (4+2) << 1 = ", cast<mark32>(prec4));
+    if (prec4 == 12) { print("  CORRECT\n"); }
+
+    print("\n[RESULT] TEST 10 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

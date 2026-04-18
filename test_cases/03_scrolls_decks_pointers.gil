@@ -1,0 +1,171 @@
+// =============================================================================
+// CGIL TEST 03: Scrolls (Fat Pointers), Decks (Arrays) & Pointers
+// =============================================================================
+// Covers: scroll fat pointer (.ptr, .len), deck[N] T fixed arrays,
+//         address-of (&), pointer dereference (*), pointer arithmetic,
+//         passing pointers to spells, array element access, rune bytes.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_num_inline(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// Spell that receives a scroll and prints its metadata
+spell inspect_scroll(scroll s) -> abyss {
+    print("  scroll.len = ");
+    print_num(cast<mark32>(s.len));
+    print("  scroll.ptr[0] (first byte) = ");
+    print_num(cast<mark32>(s.ptr[0]));
+    print("  content = \"");
+    print(s);
+    print("\"\n");
+}
+
+// Spell that mutates a value through a pointer
+spell double_value(mark16* target) -> abyss {
+    *target = *target * 2;
+}
+
+// Spell that fills a deck array with squares
+spell fill_squares(mark16* arr, mark16 n) -> abyss {
+    fore (mark16 i = 0; i < n; i++) {
+        arr[i] = i * i;
+    }
+}
+
+// Spell that computes array sum
+spell sum_deck(mark16* arr, mark16 n) -> mark32 {
+    mark32 total = 0;
+    fore (mark16 i = 0; i < n; i++) {
+        total = total + cast<mark32>(arr[i]);
+    }
+    yield total;
+}
+
+spell main() -> mark16 {
+    print("=== TEST 03: SCROLLS, DECKS & POINTERS ===\n");
+
+    // --- Scroll fat pointer ---
+    print("\n[1] Scroll Fat Pointer\n");
+    scroll greeting = "Hello, Forge!";
+    print("  Inspecting: \"Hello, Forge!\"\n");
+    inspect_scroll(greeting);
+
+    scroll empty = "";
+    print("  Empty scroll len = ");
+    print_num(cast<mark32>(empty.len));
+
+    // Verify .len matches actual string length
+    scroll test_str = "CGIL";
+    print_label("  \"CGIL\".len = ", cast<mark32>(test_str.len));
+
+    // --- Rune (byte) access via scroll.ptr ---
+    print("\n[2] Byte Access via scroll.ptr\n");
+    scroll alphabet = "ABCDE";
+    fore (mark16 i = 0; i < alphabet.len; i++) {
+        print("  byte[");
+        print_num_inline(cast<mark32>(i));
+        print("] = ");
+        putchar(cast<mark32>(alphabet.ptr[i]));
+        print(" (ASCII ");
+        print_num_inline(cast<mark32>(alphabet.ptr[i]));
+        print(")\n");
+    }
+
+    // --- Deck (fixed array) ---
+    print("\n[3] Deck Fixed Arrays\n");
+    deck[8] mark16 squares;
+    fill_squares(&squares[0], 8);
+
+    fore (mark16 i = 0; i < 8; i++) {
+        print("  squares[");
+        print_num_inline(cast<mark32>(i));
+        print("] = ");
+        print_num(cast<mark32>(squares[i]));
+    }
+    mark32 total = sum_deck(&squares[0], 8);
+    print_label("  sum of squares[0..7] = ", total);
+
+    // --- Address-of and dereference ---
+    print("\n[4] Address-of (&) and Dereference (*)\n");
+    mark16 secret = 77;
+    mark16* ptr = &secret;
+    print_label("  secret = ", cast<mark32>(secret));
+    print_label("  *ptr   = ", cast<mark32>(*ptr));
+
+    *ptr = 999;
+    print_label("  after *ptr = 999, secret = ", cast<mark32>(secret));
+
+    // --- Passing pointers to spells ---
+    print("\n[5] Pointer Parameters (mutation through spell)\n");
+    mark16 val = 21;
+    print_label("  before double_value: ", cast<mark32>(val));
+    double_value(&val);
+    print_label("  after  double_value: ", cast<mark32>(val));
+
+    // --- Multiple pointers to same array ---
+    print("\n[6] Deck Traversal via Pointer\n");
+    deck[5] mark16 data;
+    data[0] = 10;
+    data[1] = 20;
+    data[2] = 30;
+    data[3] = 40;
+    data[4] = 50;
+    mark16* cursor = &data[0];
+    mark16 dsum = 0;
+    fore (mark16 i = 0; i < 5; i++) {
+        dsum = dsum + cursor[i];
+        print("  data[");
+        print_num_inline(cast<mark32>(i));
+        print("] = ");
+        print_num(cast<mark32>(cursor[i]));
+    }
+    print_label("  sum = ", cast<mark32>(dsum));
+
+    print("\n[RESULT] TEST 03 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

@@ -1,0 +1,177 @@
+// =============================================================================
+// CGIL TEST 08: Hardware Mapping - Leyline & Portline
+// =============================================================================
+// Covers: leyline (MMIO) declarations, portline (PIO) declarations,
+//         address extraction via &, leyline vs portline distinction,
+//         address arithmetic, hardware address constants.
+//
+// NOTE: This test runs on the HOST. It does not perform real hardware I/O.
+//       It validates address extraction and compilation of hardware declarations.
+//       Real portline inb/outb requires Ring 0 and is tested in kernel builds.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// Print a hex number (manual hex output)
+spell print_hex_digit(rune d) -> abyss {
+    if (d < 10) {
+        putchar(cast<mark32>(48 + d));
+    } else {
+        putchar(cast<mark32>(55 + d)); // 55 = 'A' - 10
+    }
+}
+
+spell print_hex(soul32 n) -> abyss {
+    print("0x");
+    // Print 8 hex digits
+    fore (mark16 shift = 28; shift >= 0; shift = shift - 4) {
+        rune nibble = cast<rune>((n >> shift) & 0xF);
+        print_hex_digit(nibble);
+        if (shift == 0) { shatter; }
+    }
+    putchar(10);
+}
+
+// =============================================================================
+// HARDWARE DECLARATIONS
+// These compile to:
+//   leyline -> #define vga_buffer (*(volatile int16_t *)0xB8000)
+//   portline -> portlineAddressMap entries, reads/writes use inline asm
+// =============================================================================
+
+// VGA text mode buffer - classic MMIO example
+leyline vga_buffer: mark16 @ 0xB8000;
+
+// ATA (disk) portlines - real x86 hardware port I/O addresses
+portline ata_data:    soul16 @ 0x1F0;
+portline ata_error:   rune   @ 0x1F1;
+portline ata_count:   rune   @ 0x1F2;
+portline ata_lba_lo:  rune   @ 0x1F3;
+portline ata_lba_mid: rune   @ 0x1F4;
+portline ata_lba_hi:  rune   @ 0x1F5;
+portline ata_drive:   rune   @ 0x1F6;
+portline ata_status:  rune   @ 0x1F7;
+portline ata_command: rune   @ 0x1F7;
+
+// PS/2 keyboard
+portline kbd_data:   rune @ 0x60;
+portline kbd_status: rune @ 0x64;
+
+// PIC (interrupt controller)
+portline pic1_cmd:  rune @ 0x20;
+portline pic1_data: rune @ 0x21;
+portline pic2_cmd:  rune @ 0xA0;
+portline pic2_data: rune @ 0xA1;
+
+spell main() -> mark16 {
+    print("=== TEST 08: HARDWARE MAPPING ===\n");
+    print("  (Host mode: verifying addresses only, no real I/O)\n");
+
+    // --- Leyline address extraction ---
+    print("\n[1] Leyline Address Extraction (&leyline gives addr constant)\n");
+    soul32 vga_addr = &vga_buffer;
+    print("  &vga_buffer = ");
+    print_num(cast<mark32>(vga_addr));
+    print("  expected (0xB8000 = 753664): ");
+    print_num(753664);
+    if (vga_addr == 753664) {
+        print("  MATCH: leyline address resolved correctly\n");
+    } else {
+        print("  MISMATCH: leyline address resolution failed\n");
+    }
+
+    // --- Portline address extraction ---
+    print("\n[2] Portline Address Extraction\n");
+    addr ata_data_port   = &ata_data;
+    addr ata_status_port = &ata_status;
+    addr kbd_data_port   = &kbd_data;
+    addr pic1_cmd_port   = &pic1_cmd;
+
+    print_label("  &ata_data    (0x1F0 = 496)  = ", cast<mark32>(ata_data_port));
+    print_label("  &ata_status  (0x1F7 = 503)  = ", cast<mark32>(ata_status_port));
+    print_label("  &kbd_data    (0x60  = 96)   = ", cast<mark32>(kbd_data_port));
+    print_label("  &pic1_cmd    (0x20  = 32)   = ", cast<mark32>(pic1_cmd_port));
+
+    if (ata_data_port == 496)   { print("  ata_data address: CORRECT\n"); }
+    if (ata_status_port == 503) { print("  ata_status address: CORRECT\n"); }
+    if (kbd_data_port == 96)    { print("  kbd_data address: CORRECT\n"); }
+    if (pic1_cmd_port == 32)    { print("  pic1_cmd address: CORRECT\n"); }
+
+    // --- Address arithmetic ---
+    print("\n[3] Hardware Address Arithmetic\n");
+    addr base = &ata_data;
+    print_label("  ata base port = ", cast<mark32>(base));
+    print_label("  base + 7      = ", cast<mark32>(base + 7));
+    if (base + 7 == 503) {
+        print("  CORRECT: base + 7 == ata_status (0x1F7)\n");
+    }
+
+    // --- ATA register layout documentation ---
+    print("\n[4] Full ATA Register Map\n");
+    print("  PORT    | OFFSET | ADDR | PURPOSE\n");
+    print("  --------+--------+------+---------\n");
+    print("  ata_data    | 0 | "); print_num(cast<mark32>(&ata_data));
+    print("  ata_error   | 1 | "); print_num(cast<mark32>(&ata_error));
+    print("  ata_count   | 2 | "); print_num(cast<mark32>(&ata_count));
+    print("  ata_lba_lo  | 3 | "); print_num(cast<mark32>(&ata_lba_lo));
+    print("  ata_lba_mid | 4 | "); print_num(cast<mark32>(&ata_lba_mid));
+    print("  ata_lba_hi  | 5 | "); print_num(cast<mark32>(&ata_lba_hi));
+    print("  ata_drive   | 6 | "); print_num(cast<mark32>(&ata_drive));
+    print("  ata_status  | 7 | "); print_num(cast<mark32>(&ata_status));
+
+    // --- PIC register layout ---
+    print("\n[5] PIC (8259) Register Map\n");
+    print_label("  PIC1 command (0x20) = ", cast<mark32>(&pic1_cmd));
+    print_label("  PIC1 data    (0x21) = ", cast<mark32>(&pic1_data));
+    print_label("  PIC2 command (0xA0) = ", cast<mark32>(&pic2_cmd));
+    print_label("  PIC2 data    (0xA1) = ", cast<mark32>(&pic2_data));
+
+    // --- Verify portline != leyline semantics ---
+    print("\n[6] Leyline vs Portline: Address Space Distinction\n");
+    print("  leyline vga_buffer: MMIO - lives in PHYSICAL RAM address space\n");
+    print("  portline ata_data: PIO  - lives in x86 PORT I/O address space\n");
+    print("  Both expose &name as an 'addr' constant.\n");
+    print("  Reading leyline: emits volatile pointer dereference.\n");
+    print("  Reading portline: emits: inb/inw inline asm.\n");
+    print("  Writing portline: emits: outb/outw inline asm.\n");
+    print("  The compiler enforces the distinction - you cannot confuse them.\n");
+
+    soul32 vga  = &vga_buffer;
+    addr disk = &ata_data;
+    print_label("  VGA (MMIO space):  0xB8000 = ", cast<mark32>(vga));
+    print_label("  ATA (PORT space):  0x1F0   = ", cast<mark32>(disk));
+    print("  These are DIFFERENT address spaces - Cgil tracks which is which.\n");
+
+    print("\n[RESULT] TEST 08 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

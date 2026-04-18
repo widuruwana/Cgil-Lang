@@ -124,6 +124,7 @@ int main(int argc, char* argv[]) {
         // Feed a stringstream directly into the CodeGen constructor
         std::ostringstream cCodeStream;
         CodeGenVisitor codegen(cCodeStream);
+        codegen.setKernelMode(targetKernel);
         codegen.generate(&program);
         std::string cCode = cCodeStream.str();
 

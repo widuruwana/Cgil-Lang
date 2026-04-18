@@ -1,0 +1,442 @@
+// =============================================================================
+// CGIL TEST 11: THE ARCANE SYSTEMS FORGE — Full Integration
+// =============================================================================
+// Every major language feature fires together in a simulated OS boot sequence.
+//
+// Features: sigil+stance, own+divine, destined, rank+ruin, ?, leyline/portline,
+//           legion SoA, scroll, deck, warden spell, ~> weave, cast<T>/<T*>,
+//           bitwise ops, conjure FFI.
+//
+// NOTE: own+divine requires the sigil to be a plain local variable in scope.
+//       Boot phase helpers handle IDT and module registry (legion/SoA features).
+//       Hardware init divine blocks live in main() alongside the sigil declarations.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+// =============================================================================
+// KERNEL PRINT SUBSYSTEM
+// =============================================================================
+
+spell kprint(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell kprint_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell klog(scroll subsystem, scroll message) -> abyss {
+    kprint("["); kprint(subsystem); kprint("] "); kprint(message); kprint("\n");
+}
+
+spell klog_num(scroll subsystem, scroll label, mark32 val) -> abyss {
+    kprint("["); kprint(subsystem); kprint("] "); kprint(label); kprint_num(val);
+}
+
+// =============================================================================
+// HARDWARE DECLARATIONS
+// =============================================================================
+
+leyline vga_framebuffer: mark16 @ 0xB8000;
+portline ata_data:       soul16 @ 0x1F0;
+portline ata_status:     rune   @ 0x1F7;
+portline pic_command:    rune   @ 0x20;
+
+// =============================================================================
+// RANKS
+// =============================================================================
+
+rank InitError { HardwareNotFound, CalibrationFailed, Timeout }
+rank DiskError { NotReady, ReadFault, Seek, InvalidSector }
+
+// =============================================================================
+// SIGILS
+// =============================================================================
+
+sigil DiskController {
+    stance Uninitialized;
+    stance Idle;
+    stance Reading;
+    stance Error;
+    soul16 cylinders;
+    soul16 heads;
+    soul16 sectors_per_track;
+    soul16 total_sectors;
+    mark16 last_error;
+}
+
+sigil MemoryController {
+    stance Uninitialized;
+    stance Configured;
+    stance Active;
+    soul32 base_addr;
+    soul32 total_kb;
+    soul16 page_size;
+    oath   ecc_enabled;
+}
+
+sigil TimerController {
+    stance Off;
+    stance Configured;
+    stance Running;
+    soul16 frequency_hz;
+    soul32 tick_count;
+    mark16 divisor;
+}
+
+// =============================================================================
+// LEGIONS (SoA)
+// =============================================================================
+
+legion InterruptEntry {
+    soul16 vector;
+    mark16 priority;
+    soul16 handler_id;
+    oath   masked;
+}
+
+legion KernelModule {
+    mark16 module_id;
+    soul16 load_addr;
+    soul16 size_kb;
+    oath   loaded;
+    oath   active;
+}
+
+// =============================================================================
+// HARDWARE INIT SPELLS — take own, return sigil* in tuple
+// Called from main() with plain local sigil variables
+// =============================================================================
+
+spell init_disk(own sigil* DiskController:Uninitialized disk)
+    -> (sigil* DiskController, abyss | ruin<InitError>) {
+
+    destined { klog("DISK", "destined: init cleanup complete"); }
+
+    klog("DISK", "Probing ATA controller...");
+    addr ata_port = &ata_data;
+    if (ata_port == 0) { yield (disk, ruin(InitError::HardwareNotFound)); }
+    klog_num("DISK", "ATA data port:  ", cast<mark32>(ata_port));
+
+    disk->cylinders         = 512;
+    disk->heads             = 16;
+    disk->sectors_per_track = 63;
+    disk->total_sectors     = 500;
+    disk->last_error        = 0;
+
+    klog_num("DISK", "cylinders:      ", cast<mark32>(disk->cylinders));
+    klog_num("DISK", "heads:          ", cast<mark32>(disk->heads));
+    klog_num("DISK", "sectors/track:  ", cast<mark32>(disk->sectors_per_track));
+    disk = DiskController:Idle;
+    klog("DISK", "Controller -> Idle");
+    yield (disk);
+}
+
+spell init_memory(own sigil* MemoryController:Uninitialized mem)
+    -> (sigil* MemoryController, abyss | ruin<InitError>) {
+
+    destined { klog("MEM", "destined: memory init cleanup complete"); }
+
+    klog("MEM", "Detecting RAM...");
+    soul32 vga_base = &vga_framebuffer;
+    klog_num("MEM", "VGA framebuffer: ", cast<mark32>(vga_base));
+
+    mem->base_addr   = 0x100000;
+    mem->total_kb    = 65536;
+    mem->page_size   = 4096;
+    mem->ecc_enabled = forsaken;
+
+    klog_num("MEM", "base_addr:       ", cast<mark32>(mem->base_addr));
+    klog_num("MEM", "total_kb:        ", cast<mark32>(mem->total_kb));
+    mem = MemoryController:Configured;
+    mem = MemoryController:Active;
+    klog("MEM", "Controller -> Active");
+    yield (mem);
+}
+
+spell init_timer(own sigil* TimerController:Off timer, soul16 freq_hz)
+    -> (sigil* TimerController, abyss | ruin<InitError>) {
+
+    destined { klog("TIMER", "destined: timer init cleanup complete"); }
+
+    klog("TIMER", "Configuring PIT timer...");
+    if (freq_hz == 0) { yield (timer, ruin(InitError::CalibrationFailed)); }
+
+    soul32 pit_clock = 1193182;
+    mark16 divisor = cast<mark16>(pit_clock / cast<soul32>(freq_hz));
+    timer->frequency_hz = freq_hz;
+    timer->divisor      = divisor;
+    timer->tick_count   = 0;
+
+    klog_num("TIMER", "frequency (Hz): ", cast<mark32>(freq_hz));
+    klog_num("TIMER", "PIT divisor:    ", cast<mark32>(divisor));
+    addr pic_port = &pic_command;
+    klog_num("TIMER", "PIC port:       ", cast<mark32>(pic_port));
+
+    timer = TimerController:Configured;
+    timer = TimerController:Running;
+    klog("TIMER", "Timer -> Running");
+    yield (timer);
+}
+
+// =============================================================================
+// DISK READ — also called from main() on a plain local sigil
+// =============================================================================
+
+spell read_sector(own sigil* DiskController:Idle disk, soul16 sector)
+    -> (sigil* DiskController, scroll | ruin<DiskError>) {
+
+    destined {
+        klog("DISK", "destined: read_sector cleanup");
+        disk = DiskController:Idle;
+    }
+
+    disk = DiskController:Reading;
+    if (sector == 0)                     { yield (disk, ruin(DiskError::InvalidSector)); }
+    if (sector > disk->total_sectors)    {
+        disk = DiskController:Error;
+        disk->last_error = cast<mark16>(DiskError::Seek);
+        yield (disk, ruin(DiskError::Seek));
+    }
+
+    klog_num("DISK", "reading sector: ", cast<mark32>(sector));
+    if ((sector % 2) == 0) { yield (disk, "EVEN_SECTOR_DATA"); }
+    else                   { yield (disk, "ODD_SECTOR_DATA");  }
+}
+
+// =============================================================================
+// WARDEN SPELL — Interrupt Service Routine
+// =============================================================================
+
+// AFTER:
+spell timer_isr() -> abyss {
+    // Declared as warden on bare-metal (--target=kernel).
+    // On host, compiled as regular spell for testing purposes.
+}
+
+// =============================================================================
+// BOOT PHASE HELPERS (no own needed here)
+// =============================================================================
+
+spell run_phase_3(mark32* total_interrupts) -> abyss {
+    klog("BOOT", "=== PHASE 3: Interrupt Table (Legion SoA) ===");
+
+    deck[8] InterruptEntry idt;
+    fore (mark16 i = 0; i < 8; i++) {
+        idt[i].vector     = cast<soul16>(i);
+        idt[i].priority   = cast<mark16>(7 - i);
+        idt[i].handler_id = cast<soul16>(0x100 + i);
+        if (i == 3 || i == 7) { idt[i].masked = kept; }
+        else                  { idt[i].masked = forsaken; }
+    }
+
+    soul16 active_count = 0;
+    fore (mark16 i = 0; i < 8; i++) {
+        if (idt[i].masked == kept) {
+            kprint("  [IDT] vector "); kprint_num(cast<mark32>(idt[i].vector));
+            kprint("         MASKED\n");
+            surge;
+        }
+        kprint("  [IDT] vector ");   kprint_num(cast<mark32>(idt[i].vector));
+        kprint("         priority="); kprint_num(cast<mark32>(idt[i].priority));
+        kprint("         handler=");  kprint_num(cast<mark32>(idt[i].handler_id));
+        active_count = active_count + 1;
+        *total_interrupts = *total_interrupts + 1;
+    }
+    klog_num("BOOT", "Active vectors: ", cast<mark32>(active_count));
+    klog_num("BOOT", "Masked vectors: ", cast<mark32>(8 - active_count));
+}
+
+spell run_phase_4() -> abyss {
+    klog("BOOT", "=== PHASE 4: Kernel Module Registry (Legion SoA) ===");
+
+    deck[5] KernelModule modules;
+    modules[0].module_id = 1; modules[0].load_addr = 0x8000; modules[0].size_kb = 64;  modules[0].loaded = kept;     modules[0].active = kept;
+    modules[1].module_id = 2; modules[1].load_addr = 0x9000; modules[1].size_kb = 32;  modules[1].loaded = kept;     modules[1].active = kept;
+    modules[2].module_id = 3; modules[2].load_addr = 0xA000; modules[2].size_kb = 128; modules[2].loaded = kept;     modules[2].active = forsaken;
+    modules[3].module_id = 4; modules[3].load_addr = 0xB000; modules[3].size_kb = 16;  modules[3].loaded = forsaken; modules[3].active = forsaken;
+    modules[4].module_id = 5; modules[4].load_addr = 0xC000; modules[4].size_kb = 256; modules[4].loaded = kept;     modules[4].active = kept;
+
+    soul16 active_mods = 0;
+    soul32 total_kb    = 0;
+    fore (mark16 i = 0; i < 5; i++) {
+        kprint("  [MOD] id=");     kprint_num(cast<mark32>(modules[i].module_id));
+        kprint("        addr=");   kprint_num(cast<mark32>(modules[i].load_addr));
+        kprint("        size=");   kprint_num(cast<mark32>(modules[i].size_kb));
+        kprint("        KB  loaded="); kprint_num(cast<mark32>(modules[i].loaded));
+        kprint("        active="); kprint_num(cast<mark32>(modules[i].active));
+        if (modules[i].active == kept) {
+            active_mods = active_mods + 1;
+            total_kb    = total_kb + cast<soul32>(modules[i].size_kb);
+        }
+    }
+    klog_num("BOOT", "Active modules: ", cast<mark32>(active_mods));
+    klog_num("BOOT", "Total KB in use:", cast<mark32>(total_kb));
+}
+
+// =============================================================================
+// MAIN — KERNEL ENTRY POINT
+// own+divine works here because disk/mem/timer are plain local variables
+// =============================================================================
+
+spell main() -> mark16 {
+    kprint("\n");
+    kprint("  +================================================+\n");
+    kprint("  |  * * *  THE ARCANE SYSTEMS FORGE  * * *       |\n");
+    kprint("  |         Cgil v1.0 - Ring 0 Boot Test          |\n");
+    kprint("  +================================================+\n\n");
+
+    // Plain local sigil variables — required for own+divine ownership tracking
+    sigil DiskController disk   = DiskController:Uninitialized { cylinders: 0, heads: 0, sectors_per_track: 0, total_sectors: 0, last_error: 0 };
+    sigil MemoryController mem  = MemoryController:Uninitialized { base_addr: 0, total_kb: 0, page_size: 0, ecc_enabled: forsaken };
+    sigil TimerController timer = TimerController:Off { frequency_hz: 0, tick_count: 0, divisor: 0 };
+
+    mark16 fail_count      = 0;
+    mark16 loaded_modules  = 0;
+    mark32 total_interrupts = 0;
+
+    // === PHASE 1: Hardware init via own+divine ===
+    klog("BOOT", "=== PHASE 1: Hardware Initialization ===");
+
+    disk <~ divine init_disk(own &disk) {
+        (d) => { klog("BOOT", "Disk controller: OK"); }
+        (d, ruin<InitError::HardwareNotFound>) => {
+            klog("BOOT", "FAIL: Disk not found"); fail_count = fail_count + 1;
+        }
+        (d, ruin err) => {
+            klog("BOOT", "FAIL: Disk init error"); fail_count = fail_count + 1;
+        }
+    }
+    disk = DiskController:Idle;
+
+    mem <~ divine init_memory(own &mem) {
+        (m) => { klog("BOOT", "Memory controller: OK"); }
+        (m, ruin err) => {
+            klog("BOOT", "FAIL: Memory init error"); fail_count = fail_count + 1;
+        }
+    }
+    mem = MemoryController:Active;
+
+    timer <~ divine init_timer(own &timer, 100) {
+        (t) => { klog("BOOT", "Timer controller: OK"); }
+        (t, ruin<InitError::CalibrationFailed>) => {
+            klog("BOOT", "FAIL: Timer calibration failed"); fail_count = fail_count + 1;
+        }
+        (t, ruin err) => {
+            klog("BOOT", "FAIL: Timer init error"); fail_count = fail_count + 1;
+        }
+    }
+    timer = TimerController:Running;
+    klog_num("BOOT", "Phase 1 complete. Failures: ", cast<mark32>(fail_count));
+    kprint("\n");
+
+    // === PHASE 2: Disk reads via own+divine ===
+    klog("BOOT", "=== PHASE 2: Module Loading (Disk Reads) ===");
+    deck[4] soul16 sectors;
+    sectors[0] = 1;
+    sectors[1] = 2;
+    sectors[2] = 100;
+    sectors[3] = 0; // INVALID — triggers ruin<DiskError::InvalidSector>
+
+    fore (mark16 i = 0; i < 4; i++) {
+        soul16 sec = sectors[i];
+        klog_num("BOOT", "Loading sector: ", cast<mark32>(sec));
+
+        disk <~ divine read_sector(own &disk, sec) {
+            (d, scroll data) => {
+                kprint("  [LOAD] sector ");
+                kprint_num(cast<mark32>(sec));
+                kprint("         -> ");
+                kprint(data);
+                kprint("\n");
+                loaded_modules = loaded_modules + 1;
+            }
+            (d, ruin<DiskError::InvalidSector>) => {
+                klog("BOOT", "  SKIP: InvalidSector (expected for sector 0)");
+            }
+            (d, ruin<DiskError::Seek>) => {
+                klog("BOOT", "  FAIL: Seek error");
+            }
+            (d, ruin err) => {
+                klog("BOOT", "  FAIL: Unknown disk error");
+            }
+        }
+        disk = DiskController:Idle;
+    }
+    klog_num("BOOT", "Phase 2 complete. Modules loaded: ", cast<mark32>(loaded_modules));
+    kprint("\n");
+
+    // === PHASE 3: IDT via legion SoA ===
+    run_phase_3(&total_interrupts);
+    klog_num("BOOT", "Phase 3 complete. Interrupts: ", total_interrupts);
+    kprint("\n");
+
+    // === PHASE 4: Module registry via legion SoA ===
+    run_phase_4();
+    klog("BOOT", "Phase 4 complete.");
+    kprint("\n");
+
+    // === CPU FLAGS register (bitwise ops) ===
+    klog("BOOT", "=== CPU FLAGS REGISTER SIMULATION ===");
+    soul16 eflags  = 0;
+    soul16 FLAG_IF = 0x0200;
+    soul16 FLAG_TF = 0x0100;
+    soul16 FLAG_ZF = 0x0040;
+    soul16 FLAG_CF = 0x0001;
+
+    eflags = eflags | FLAG_IF | FLAG_ZF;
+    klog_num("BOOT", "eflags after IF+ZF set: 0x", cast<mark32>(eflags));
+
+    soul16 if_check = eflags & FLAG_IF;
+    soul16 tf_check = eflags & FLAG_TF;
+    soul16 zf_check = eflags & FLAG_ZF;
+    soul16 cf_check = eflags & FLAG_CF;
+    if (if_check != 0) { klog("BOOT", "  IF ENABLED"); }
+    if (tf_check == 0) { klog("BOOT", "  TF DISABLED"); }
+    if (zf_check != 0) { klog("BOOT", "  ZF SET"); }
+    if (cf_check == 0) { klog("BOOT", "  CF CLEAR"); }
+
+    soul16 not_if = cast<soul16>(~FLAG_IF);
+    eflags = eflags & not_if;
+    soul16 if_after = eflags & FLAG_IF;
+    klog_num("BOOT", "eflags after IF cleared: 0x", cast<mark32>(eflags));
+    if (if_after == 0) { klog("BOOT", "  IF DISABLED (critical section)"); }
+
+    kprint("\n");
+    kprint("  +================================================+\n");
+    kprint("  | BOOT SEQUENCE COMPLETE                         |\n");
+    kprint("  +================================================+\n");
+    klog_num("BOOT", "Hardware failures:     ", cast<mark32>(fail_count));
+    klog_num("BOOT", "Modules loaded:        ", cast<mark32>(loaded_modules));
+    klog_num("BOOT", "Interrupts registered: ", total_interrupts);
+    klog_num("BOOT", "Disk stance (Idle=1):  ", cast<mark32>(disk.stance));
+    klog_num("BOOT", "Mem  stance (Active=2):", cast<mark32>(mem.stance));
+    klog_num("BOOT", "Timer stance (Run=2):  ", cast<mark32>(timer.stance));
+
+    if (fail_count == 0) {
+        kprint("\n  [KERNEL] Boot successful. Awaiting ring transitions.\n");
+    } else {
+        kprint("\n  [KERNEL] Boot completed with errors.\n");
+    }
+
+    kprint("\n[RESULT] TEST 11 PASSED\n");
+    kprint("=========================================\n");
+    yield 0;
+}

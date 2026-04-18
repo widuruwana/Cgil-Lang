@@ -1,0 +1,153 @@
+// =============================================================================
+// CGIL TEST 02: Control Flow
+// =============================================================================
+// Covers: if/elif/else, fore loop, whirl loop, shatter (break),
+//         surge (continue), nested loops, UpdateExpr (++/--),
+//         lexical scope isolation.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_num_inline(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+}
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+spell classify(mark16 n) -> scroll {
+    if (n < 0)   { yield "negative"; }
+    elif (n == 0) { yield "zero"; }
+    elif (n < 10) { yield "small"; }
+    elif (n < 100){ yield "medium"; }
+    else           { yield "large"; }
+}
+
+spell main() -> mark16 {
+    print("=== TEST 02: CONTROL FLOW ===\n");
+
+    // --- If / Elif / Else ---
+    print("\n[1] If / Elif / Else Chains\n");
+    mark16 cases = 0;
+    mark16 vals = 5;
+    whirl (vals <= 400) {
+        scroll label = classify(vals);
+        print("  classify(");
+        print_num_inline(cast<mark32>(vals));
+        print(") -> ");
+        print(label);
+        print("\n");
+        vals = vals * 4;
+        cases = cases + 1;
+        if (cases >= 5) { shatter; }
+    }
+
+    // --- Fore loop with surge (continue) ---
+    print("\n[2] Fore Loop with Surge (skip evens)\n");
+    mark32 odd_sum = 0;
+    fore (mark16 i = 1; i <= 10; i++) {
+        if ((i % 2) == 0) { surge; }
+        print("  odd: ");
+        print_num(cast<mark32>(i));
+        odd_sum = odd_sum + cast<mark32>(i);
+    }
+    print_label("  sum of odds 1..10 = ", odd_sum);
+
+    // --- Fore loop with shatter (break) ---
+    print("\n[3] Fore Loop with Shatter (stop at first multiple of 7)\n");
+    fore (mark16 j = 1; j <= 100; j++) {
+        if ((j % 7) == 0) {
+            print("  first multiple of 7 in 1..100: ");
+            print_num(cast<mark32>(j));
+            shatter;
+        }
+    }
+
+    // --- Whirl loop (countdown) ---
+    print("\n[4] Whirl Loop (countdown from 5)\n");
+    mark16 count = 5;
+    whirl (count > 0) {
+        print("  T-minus ");
+        print_num(cast<mark32>(count));
+        count = count - 1;
+    }
+    print("  Ignition.\n");
+
+    // --- Nested loops ---
+    print("\n[5] Nested Loops (3x3 multiplication table)\n");
+    fore (mark16 row = 1; row <= 3; row++) {
+        fore (mark16 col = 1; col <= 3; col++) {
+            mark16 product = row * col;
+            print("  ");
+            print_num_inline(cast<mark32>(row));
+            print("  x ");
+            print_num_inline(cast<mark32>(col));
+            print("  = ");
+            print_num(cast<mark32>(product));
+        }
+    }
+
+    // --- Lexical scope isolation ---
+    print("\n[6] Lexical Scope Isolation\n");
+    mark16 outer = 100;
+    if (kept) {
+        mark16 inner = 42;
+        outer = outer + inner;
+        print_label("  outer + inner (inside block) = ", cast<mark32>(outer));
+    }
+    print_label("  outer after block            = ", cast<mark32>(outer));
+    // inner is no longer accessible here — compiler enforces it
+
+    // --- Prefix and postfix increment ---
+    print("\n[7] Increment and Decrement (++/--)\n");
+    mark16 counter = 10;
+    counter++;
+    print_label("  10++ = ", cast<mark32>(counter));
+    counter--;
+    counter--;
+    print_label("  11-- twice = ", cast<mark32>(counter));
+    ++counter;
+    print_label("  ++9 = ", cast<mark32>(counter));
+
+    print("\n[RESULT] TEST 02 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}

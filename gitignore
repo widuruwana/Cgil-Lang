@@ -1,0 +1,79 @@
+# =============================================================================
+# CGIL COMPILER FORGE — .gitignore
+# =============================================================================
+
+# =============================================================================
+# BUILD ARTIFACTS
+# =============================================================================
+
+# Compiler build output
+build/
+*.o
+*.obj
+
+# The compiled compiler binary
+cgilc.exe
+cgilc
+
+# =============================================================================
+# CGIL INTERMEDIATE FILES
+# =============================================================================
+
+# Intermediate C files generated during transpilation
+# (kept on failed builds for debugging, should not be committed)
+test_cases/*.c
+*.c
+
+# Compiled test executables
+test_cases/*.exe
+test_cases/*.out
+test_cases/test_out
+test_cases/test_out.exe
+
+# =============================================================================
+# WINDOWS
+# =============================================================================
+
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# =============================================================================
+# EDITORS & IDEs
+# =============================================================================
+
+# VS Code (keep .vscode/settings.json if you want shared editor config,
+# but ignore personal/machine-specific files)
+.vscode/launch.json
+.vscode/c_cpp_properties.json
+.vscode/*.log
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.suo
+*.aps
+
+# CLion / JetBrains
+.idea/
+cmake-build-*/
+
+# =============================================================================
+# COMPILER GENERATED
+# =============================================================================
+
+# GCC dependency files
+*.d
+
+# Precompiled headers
+*.gch
+*.pch
+
+# =============================================================================
+# LOGS & TEMP
+# =============================================================================
+
+*.log
+*.tmp
+*.temp

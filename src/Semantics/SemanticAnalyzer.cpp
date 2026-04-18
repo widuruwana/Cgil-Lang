@@ -1189,6 +1189,19 @@ void SemanticAnalyzer::visit(BinaryExpr* node) {
 
         case TokenType::EQ:
         case TokenType::NEQ:
+            // Block Omen comparisons — Omens must be unpacked via ? or divine first
+            if (leftType && leftType->kind == TypeKind::OMEN) {
+                error(node->op,
+                      "Cannot compare an Omen type directly. "
+                       "Unpack it first using '?' or a 'divine' block.");
+            }
+            if (rightType && rightType->kind == TypeKind::OMEN) {
+                error(node->op,
+                        "Cannot compare an Omen type directly. "
+                        "Unpack it first using '?' or a 'divine' block.");
+            }
+            currentExprType = typeRegistry["oath"];
+            break;
         case TokenType::GT:
         case TokenType::LT:
         case TokenType::GEQ:
@@ -1221,11 +1234,14 @@ void SemanticAnalyzer::visit(BinaryExpr* node) {
             break;
         }
 
+        case TokenType::AMP:
         case TokenType::PIPE:
-            // | in expression context = Omen union (T | ruin<R>).
-            // V1: This appears mainly in type annotations, not as a runtime
-            // expression. We return an OMEN type.
-            currentExprType = std::make_shared<TypeInfo>(TypeInfo{TypeKind::OMEN, "Omen"});
+        case TokenType::CARET:
+        case TokenType::LSHIFT:
+        case TokenType::RSHIFT:
+            node->left->accept(*this);
+            node->right->accept(*this);
+            currentExprType = typeRegistry["soul16"];
             break;
 
         default:
@@ -1418,23 +1434,22 @@ void SemanticAnalyzer::visit(IdentifierExpr* node) {
                   "'" + node->token.lexeme + "' is not a known rank type. "
                   "Variant access (::) requires a declared rank name.");
         }
-        
-        // Validate node->variantName.lexeme is actually in the rank's variants
         const auto& variants = rankVariants[node->token.lexeme];
         bool variantExists = false;
         for (const auto& v : variants) {
-            if (v == node->variantName.lexeme) {
-                variantExists = true;
-                break;
-            }
+            if (v == node->variantName.lexeme) { variantExists = true; break; }
         }
-        
         if (!variantExists) {
-            error(node->variantName, 
-                  "Rank '" + node->token.lexeme + "' has no variant named '" + node->variantName.lexeme + "'.");
+            error(node->variantName,
+                  "Rank '" + node->token.lexeme + "' has no variant named '" +
+                  node->variantName.lexeme + "'.");
         }
-
-        currentExprType = getBuiltinType("soul16");
+        // Return the RANK type itself, not soul16.
+        // This allows: Color c = Color::Red; (RANK = RANK, correct)
+        // Rank variants still evaluate to their soul16 discriminant at runtime,
+        // but the SA treats the expression as having the rank's type for
+        // assignment compatibility checking.
+        currentExprType = it->second;
         return;
     }
 

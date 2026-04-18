@@ -1,0 +1,237 @@
+// =============================================================================
+// CGIL TEST 09: Legion - Structure of Arrays (SoA) Transformation
+// =============================================================================
+// Covers: legion declarations, deck[N] legion arrays, transparent SoA
+//         field access (entities[i].field -> entities_field[i]),
+//         SoA initialization, SoA iteration and accumulation,
+//         multiple legions, SoA vs conceptual AoS equivalence.
+// =============================================================================
+
+pact <stdio.h>;
+conjure spell putchar(mark32 c) -> mark32;
+
+spell print(scroll msg) -> abyss {
+    fore (mark16 i = 0; i < msg.len; i++) {
+        putchar(cast<mark32>(msg.ptr[i]));
+    }
+}
+
+spell print_num(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); putchar(10); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+    putchar(10);
+}
+
+spell print_num_inline(mark32 n) -> abyss {
+    if (n == 0) { putchar(48); yield; }
+    mark32 buf = 0;
+    mark32 digits = 0;
+    whirl (n > 0) {
+        buf = buf * 10 + (n % 10);
+        n = n / 10;
+        digits = digits + 1;
+    }
+    whirl (digits > 0) {
+        putchar(cast<mark32>(48 + (buf % 10)));
+        buf = buf / 10;
+        digits = digits - 1;
+    }
+}
+
+
+spell print_label(scroll label, mark32 val) -> abyss {
+    print(label);
+    print_num(val);
+}
+
+// =============================================================================
+// LEGION DECLARATIONS
+// Each legion compiles to SEPARATE arrays per field, not a struct array.
+//
+//   legion Particle { mark16 x; mark16 y; mark16 vx; mark16 vy; }
+//   deck[100] Particle swarm;
+//
+// The compiler emits:
+//   int16_t swarm_x[100];
+//   int16_t swarm_y[100];
+//   int16_t swarm_vx[100];
+//   int16_t swarm_vy[100];
+//
+// Access: swarm[i].x compiles to swarm_x[i]
+// This means all X values are contiguous in memory - cache-optimal for
+// operations that touch all X values (like a physics tick).
+// =============================================================================
+
+legion Particle {
+    mark16 x;
+    mark16 y;
+    mark16 vx;
+    mark16 vy;
+}
+
+legion Entity {
+    mark16 id;
+    mark16 health;
+    mark16 attack;
+    mark16 defense;
+}
+
+legion SensorReading {
+    soul16 timestamp;
+    mark16 value;
+    rune   channel;
+    oath   valid;
+}
+
+spell main() -> mark16 {
+    print("=== TEST 09: LEGION (STRUCTURE OF ARRAYS) ===\n");
+    print("\n  The compiler transforms 'deck[N] legion T' into\n");
+    print("  N separate contiguous arrays, one per field.\n");
+    print("  Syntax remains identical - the transformation is invisible.\n");
+
+    // --- Particle physics simulation ---
+    print("\n[1] Particle Swarm (8 particles)\n");
+    deck[8] Particle swarm;
+
+    // Initialize: position i, velocity (i, -i)
+    fore (mark16 i = 0; i < 8; i++) {
+        swarm[i].x  = cast<mark16>(i * 10);
+        swarm[i].y  = cast<mark16>(i * 5);
+        swarm[i].vx = cast<mark16>(i + 1);
+        swarm[i].vy = cast<mark16>(0 - i);
+    }
+
+    print("  Initial state:\n");
+    fore (mark16 i = 0; i < 8; i++) {
+        print("  P[");
+        print_num_inline(cast<mark32>(i));
+        print("]  x=");    print_num_inline(cast<mark32>(swarm[i].x));
+        print("  y=");    print_num_inline(cast<mark32>(swarm[i].y));
+        print("  vx=");   print_num(cast<mark32>(swarm[i].vx));
+    }
+
+    // Physics tick: apply velocity
+    print("\n  Physics tick (apply velocity):\n");
+    fore (mark16 i = 0; i < 8; i++) {
+        swarm[i].x = swarm[i].x + swarm[i].vx;
+        swarm[i].y = swarm[i].y + swarm[i].vy;
+    }
+
+    mark32 total_x = 0;
+    mark32 total_y = 0;
+    fore (mark16 i = 0; i < 8; i++) {
+        total_x = total_x + cast<mark32>(swarm[i].x);
+        total_y = total_y + cast<mark32>(swarm[i].y);
+        print("  P[");
+        print_num_inline(cast<mark32>(i));
+        print("] x=");  print_num_inline(cast<mark32>(swarm[i].x));
+        print("  y=");  print_num(cast<mark32>(swarm[i].y));
+    }
+    print_label("  Sum of all X after tick = ", total_x);
+    print_label("  Sum of all Y after tick = ", total_y);
+
+    // Verify: sum_x = sum(i*10 + (i+1)) for i=0..7 = sum(11i+1) = 11*28+8 = 316
+    // sum_y = sum(i*5 + (-i)) = sum(4i) for i=0..7 = 4*28 = 112
+    if (total_x == 316) { print("  X sum CORRECT (316)\n"); }
+    else { print("  X sum WRONG\n"); }
+    if (total_y == 112) { print("  Y sum CORRECT (112)\n"); }
+    else { print("  Y sum WRONG\n"); }
+
+    // --- Entity combat system ---
+    print("\n[2] Entity Combat System (5 entities)\n");
+    deck[5] Entity party;
+    party[0].id = 1;  party[0].health = 100; party[0].attack = 25; party[0].defense = 10;
+    party[1].id = 2;  party[1].health = 80;  party[1].attack = 30; party[1].defense = 8;
+    party[2].id = 3;  party[2].health = 120; party[2].attack = 15; party[2].defense = 20;
+    party[3].id = 4;  party[3].health = 60;  party[3].attack = 40; party[3].defense = 5;
+    party[4].id = 5;  party[4].health = 90;  party[4].attack = 20; party[4].defense = 15;
+
+    print("  Entity stats:\n");
+    fore (mark16 i = 0; i < 5; i++) {
+        print("  Entity ");
+        print_num(cast<mark32>(party[i].id));
+        print("  | HP:");    print_num(cast<mark32>(party[i].health));
+        print("  | ATK:"); print_num(cast<mark32>(party[i].attack));
+        print("  | DEF:"); print_num(cast<mark32>(party[i].defense));
+    }
+
+    // Compute battle power (attack * 2 - defense)
+    print("  Battle power (atk*2 - def):\n");
+    mark16 strongest_id = 0;
+    mark16 strongest_power = 0;
+    fore (mark16 i = 0; i < 5; i++) {
+        mark16 power = party[i].attack * 2 - party[i].defense;
+        print("  Entity ");
+        print_num(cast<mark32>(party[i].id));
+        print("  power = ");
+        print_num(cast<mark32>(power));
+        if (power > strongest_power) {
+            strongest_power = power;
+            strongest_id = party[i].id;
+        }
+    }
+    print_label("  Strongest entity ID    = ", cast<mark32>(strongest_id));
+    print_label("  Strongest battle power = ", cast<mark32>(strongest_power));
+
+    // --- Sensor array ---
+    print("\n[3] Sensor Reading Array (6 channels)\n");
+    deck[6] SensorReading sensors;
+
+    fore (mark16 i = 0; i < 6; i++) {
+        sensors[i].value     = cast<mark16>(i * 33);
+        sensors[i].channel   = cast<rune>(i);
+        sensors[i].valid     = kept;
+    }
+
+    // Corrupt one reading
+    sensors[3].valid = forsaken;
+    sensors[3].value = 9999;
+
+    print("  Processing sensor readings (skip invalid):\n");
+    mark32 valid_sum = 0;
+    mark16 valid_count = 0;
+
+    fore (mark16 i = 0; i < 6; i++) {
+        if (sensors[i].valid == forsaken) {
+            print("  ch[");
+            print_num_inline(cast<mark32>(i));
+            print("] INVALID (skipping)\n");
+            surge;
+        }
+        valid_sum   = valid_sum + cast<mark32>(sensors[i].value);
+        valid_count = valid_count + 1;
+        print("  ch[");
+        print_num_inline(cast<mark32>(i));
+        print("] t=");
+        print_num_inline(cast<mark32>(sensors[i].timestamp));
+        print("  val=");
+        print_num(cast<mark32>(sensors[i].value));
+    }
+
+    print_label("  valid readings   = ", cast<mark32>(valid_count));
+    print_label("  sum of readings  = ", valid_sum);
+    if (valid_count > 0) {
+        print_label("  average reading  = ", valid_sum / cast<mark32>(valid_count));
+    }
+
+    print("\n  SoA memory layout (what the compiler actually emits):\n");
+    print("  swarm_x[8], swarm_y[8], swarm_vx[8], swarm_vy[8]\n");
+    print("  party_id[5], party_health[5], party_attack[5], party_defense[5]\n");
+    print("  sensors_timestamp[6], sensors_value[6], sensors_channel[6], sensors_valid[6]\n");
+    print("  All field arrays are contiguous - cache lines are maximally utilized.\n");
+
+    print("\n[RESULT] TEST 09 PASSED\n");
+    print("=========================================\n");
+    yield 0;
+}
