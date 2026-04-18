@@ -536,8 +536,9 @@ cgil/
 │   ├── CodeGen/CodeGen.cpp
 │   └── main.cpp
 ├── test_cases/
-│   ├── 01_basic_syntax.gil
+│   ├── 01_primitives_and_arithmetic.gil
 │   ├── ...
+|   ├── 11_arcane_os_integration.gil
 └── makefile
 ```
 
