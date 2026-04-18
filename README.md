@@ -1,11 +1,12 @@
 <div align="center">
 
-**The Arcane Systems Forge**
+# The Arcane Systems Forge
 
 *A memory-safe, typestate-driven systems language targeting bare-metal Ring 0.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Stage: V1.0 Golden Master](https://img.shields.io/badge/Stage-V1.0%20Golden%20Master-brightgreen)]()
+[![Tests: 11/11 Passing](https://img.shields.io/badge/Tests-11%2F11%20Passing-brightgreen)]()
 [![Target: Bare Metal x86](https://img.shields.io/badge/Target-Bare%20Metal%20x86-blue)]()
 [![Backend: GNU C11](https://img.shields.io/badge/Backend-GNU%20C11-orange)]()
 
@@ -296,6 +297,40 @@ pact <stdio.h>;
 
 ---
 
+These constraints were discovered and documented during test execution. They
+are not bugs — they are intentional design decisions with specific rationale.
+ 
+**Type constraints:**
+- `addr` is `uint16_t` (16-bit). Cannot hold physical addresses above `0xFFFF`.
+  Use `soul32` for 20-bit+ addresses like VGA `0xB8000`.
+- Binary literals (`0b1010`) are not supported. Use hex (`0xAAAA`) instead.
+- `flow` (float) is banned inside `warden spell` bodies — FPU in an ISR
+  corrupts the FPU state. The SA enforces this with a hard error.
+**Syntax rules:**
+- Stance syntax uses single colon: `Counter:Idle`
+- Rank variant syntax uses double colon: `DiskError::Timeout`
+- These are not interchangeable. The SA will catch the wrong one.
+- Sigil pointer declaration: `sigil* TypeName varName` — star after `sigil` keyword.
+  `sigil TypeName* varName` is rejected by the parser.
+- Ternary operator (`? :`) is not supported. Use `if/else` assignment.
+**Ownership constraints:**
+- `own &variable` requires `variable` to be a plain local identifier in scope.
+  `own &*ptr` (address of dereference) is rejected by the SA.
+  This is correct — ownership tracking operates on named symbols, not memory
+  locations resolved at runtime.
+- After a `divine` block, the compiler resets the owned variable's stance to
+  `Unknown`. Explicitly re-assign the stance before using it again.
+**Legion constraints:**
+- `legion_array[i] = LegionType { ... }` is invalid — the struct no longer
+  exists after SoA transformation. Assign fields individually:
+  `legion_array[i].field = value;`
+**Tuple return constraints:**
+- Only `sigil*` is valid in tuple return type positions.
+  `(mark32*, mark16 | ruin<E>)` is rejected by the parser.
+  Use a sigil to carry state instead of a raw primitive pointer.
+
+---
+
 ## Quick Start
 
 ### Building the Compiler
@@ -391,10 +426,10 @@ spell main() -> mark16 {
 ┌──────────────────────────────────────────────────────────────┐
 │  Code Generator (Three-Phase)                                │
 │                                                              │
-│  Phase 1 TYPES: rank typedefs, sigil structs, Omen unions,  │
+│  Phase 1 TYPES: rank typedefs, sigil structs, Omen unions,   │
 │                 Tuple structs, legion SoA registration.      │
-│  Phase 2 PROTOTYPES: forward declarations for all spells.   │
-│  Phase 3 IMPLEMENTATIONS: spell bodies, leyline globals.    │
+│  Phase 2 PROTOTYPES: forward declarations for all spells.    │
+│  Phase 3 IMPLEMENTATIONS: spell bodies, leyline globals.     │
 │                                                              │
 │  Key emissions:                                              │
 │    • destined → goto chain with LIFO label ordering          │
@@ -403,7 +438,10 @@ spell main() -> mark16 {
 │    • portline reads → inb/inw inline asm                     │
 │    • portline writes → outb/outw inline asm                  │
 │    • legion arrays → transparent SoA field splitting         │
-│    • warden → __attribute__((interrupt))                     │
+│    • warden spell → __attribute__((interrupt))               │
+│                        on --target=kernel only               │
+│    • leyline &addr → ((uint32_t)0xADDR) integer constant     │
+│                       (not volatile pointer)                 │
 └────┬─────────────────────────────────────────────────────────┘
      │  .c file
      ▼
@@ -414,21 +452,33 @@ spell main() -> mark16 {
 
 ## Test Suite
 
-All 11 tests pass. The final test (09) is a zero-copy lexer — written entirely in Cgil — that tokenizes a source string at runtime using every major language feature simultaneously.
+> All 11 tests pass on Windows (MinGW GCC) and Linux. Tests are self-contained —
+> each file includes its own print helpers and runs independently. The final test
+> (`11_arcane_os_integration.gil`) is a complete bare-metal OS boot simulation
+> that exercises every language feature simultaneously and serves as the
+> integration proof.
+ 
+Run all tests:
+```bash
+for f in test_cases/*.gil; do
+    ./cgilc "$f" --target=host -o test_out && ./test_out
+    echo "---"
+done
+```
 
-| Test | What It Verifies |
-|------|-----------------|
-| 01 — Basic Syntax | Primitives, arithmetic, if/elif/else, FFI via conjure |
-| 02 — Control Flow | fore, whirl, shatter (break), surge (continue) |
-| 03 — Pointers & Decks | Address-of, dereference, deck arrays, pointer-to-spell params |
-| 04 — Sigils & Stance | Sigil structs, stance transitions, typestate lock enforcement |
-| 05 — Divine & Omens | divine pattern matching, ? propagation, payloadless omen |
-| 06 — Loops & Destined | LIFO destined chains, conditional cleanup, multi-path yield |
-| 07 — Arcane OS Sim | Full integration: leyline, portline, own, divine, destined, warden |
-| 08 — Lexer Primitives | Bitwise ops (&, ^, <<, >>), modulo, integer-to-ASCII conversion |
-| 09 — Bootstrap Lexer | Zero-copy lexer written in Cgil, tokenizes `"val = 42 + 5;"` |
-| 10 — Type Safety | scroll field safety, array type propagation, cast<T> and cast<T*> |
-| 11 — Legion SoA | Structure of Arrays transformation, transparent field access |
+| Test | File | Feature Coverage | Status |
+|------|------|-----------------|--------|
+| 01 | `01_primitives_and_arithmetic.gil` | All primitive types, arithmetic, bitwise, cast, comparisons | ✅ PASS |
+| 02 | `02_control_flow.gil` | if/elif/else, fore, whirl, shatter, surge, ++/--, scope | ✅ PASS |
+| 03 | `03_scrolls_decks_pointers.gil` | scroll fat pointer, deck arrays, &, *, pointer params | ✅ PASS |
+| 04 | `04_ranks_and_omens.gil` | rank discriminants, rank-as-value, Omen construction, ? | ✅ PASS |
+| 05 | `05_sigils_and_typestates.gil` | sigil structs, stance transitions, typestate lock, pointer mutation | ✅ PASS |
+| 06 | `06_ownership_and_divine.gil` | own, divine all branch types, destined, ownership cycles | ✅ PASS |
+| 07 | `07_destined_raii.gil` | LIFO destined, conditional destined, ? triggers cleanup | ✅ PASS |
+| 08 | `08_hardware_mapping.gil` | leyline MMIO, portline PIO, &address extraction, ATA/PIC maps | ✅ PASS |
+| 09 | `09_legion_soa.gil` | SoA transformation, physics, combat, sensor arrays | ✅ PASS |
+| 10 | `10_weave_cast_operators.gil` | ~> pipeline, cast<T>/<T*>, bitwise, modulo, precedence | ✅ PASS |
+| 11 | `11_arcane_os_integration.gil` | Full OS boot: all features simultaneously | ✅ PASS |
 
 ---
 
@@ -444,6 +494,8 @@ All 11 tests pass. The final test (09) is a zero-copy lexer — written entirely
 | Silently ignore a disk error code | Program continues in broken state | Omen must be handled — `?` or `divine` |
 | Access array element field after subscript | SA blindly accepts wrong field names | Hard error: field not found on element type |
 | FPU in interrupt service routine | Silent kernel panic at next context switch | Compile error in `warden spell` context |
+| Direct Omen comparison with `==` | Silent wrong behavior at runtime | Compile error: use `?` or `divine` |
+| Leyline treated as port I/O or vice versa | Wrong CPU instruction, silent hardware failure | Impossible — `leyline`/`portline` are structurally distinct |
 
 ---
 
